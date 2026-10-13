@@ -255,6 +255,18 @@ export const projectsView: View = (context, root) => {
           );
         }
         actions.push(
+          h(
+            'button',
+            {
+              class: 'btn',
+              type: 'button',
+              onclick: () => {
+                context.setEditingProject(record.id);
+                context.navigate('editor');
+              },
+            },
+            record.scene.items.length > 0 ? `Editar itens (${record.scene.items.length})` : 'Adicionar itens',
+          ),
           h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { mode = 'renaming'; message = null; redraw(); } }, 'Renomear'),
         );
         if (health.status !== 'broken') {

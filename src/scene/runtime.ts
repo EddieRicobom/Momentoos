@@ -128,6 +128,7 @@ export class SceneRuntime {
       }
 
       const nodes = createItemNodes();
+      nodes.root.userData.itemId = item.id;
       applyItemTransform(nodes, item.transform);
       nodes.root.visible = item.visible;
       if (controller.object) nodes.scale.add(controller.object);
@@ -223,6 +224,48 @@ export class SceneRuntime {
     applyItemTransform(entry.nodes, item.transform);
     entry.nodes.root.visible = item.visible;
     entry.controller.setOpacity(item.options.opacity);
+  }
+
+  /** Acrescenta e carrega um item depois da montagem inicial (editor). */
+  async add(item: SceneItem): Promise<void> {
+    if (this.disposed || this.entries.has(item.id)) return;
+    const entry: Entry = { item, state: 'loading' };
+    this.entries.set(item.id, entry);
+    this.emit();
+    await this.loadOne(entry);
+  }
+
+  /** Tira um item da cena e libera seus recursos. */
+  remove(id: string): void {
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    try {
+      entry.controller?.dispose();
+    } catch {
+      /* limpeza best-effort */
+    }
+    entry.nodes?.root.removeFromParent();
+    this.entries.delete(id);
+    this.emit();
+  }
+
+  /** Nó raiz do item na cena (para seleção, destaque e arrasto). */
+  rootOf(id: string): THREE.Object3D | null {
+    const entry = this.entries.get(id);
+    return entry?.state === 'ready' ? (entry.nodes?.root ?? null) : null;
+  }
+
+  /** Id do item a que um objeto da cena pertence (sobe pelos pais), ou null. */
+  itemIdOf(object: THREE.Object3D | null): string | null {
+    for (let node: THREE.Object3D | null = object; node; node = node.parent) {
+      const id = node.userData.itemId;
+      if (typeof id === 'string' && this.entries.has(id)) return id;
+    }
+    return null;
+  }
+
+  clipsOf(id: string): readonly string[] {
+    return this.entries.get(id)?.controller?.clips ?? [];
   }
 
   summary(): RuntimeSummary {

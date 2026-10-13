@@ -680,3 +680,138 @@ input {
   border: 1px solid var(--border);
   background: #000;
 }
+
+/* ---------------------------------------------------------------- editor da cena */
+
+.editor-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  max-height: 60vh;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #14181c;
+}
+
+.editor-status {
+  margin: 0;
+}
+
+.editor-problems {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 0.85rem;
+  color: var(--warn, #f0b429);
+}
+
+.item-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.item-row[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slider {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.slider-label {
+  font-size: 0.88rem;
+}
+
+.slider-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  min-width: 7ch;
+  text-align: right;
+}
+
+.slider input[type='range'] {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.panel-subtitle {
+  margin: 16px 0 4px;
+  font-size: 0.95rem;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.fine-tune {
+  margin: 12px 0;
+}
+
+.save-bar {
+  position: sticky;
+  bottom: calc(8px + var(--safe-bottom));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(8, 10, 12, 0.92);
+  border: 1px solid var(--accent);
+}
+
+.save-bar .chip-text {
+  flex: 1;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.editor [aria-pressed='true'].btn {
+  border-color: var(--accent);
+}

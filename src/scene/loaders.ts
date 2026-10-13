@@ -384,6 +384,7 @@ const loadModel: ItemLoader = async (item, data) => {
     ...base,
     object: root,
     ...(note ? { note } : {}),
+    clips: gltf.animations.map((clip) => clip.name).filter((name) => name.length > 0),
     needsLights: true,
     setActive: async (active) => {
       if (action) action.paused = !active;
