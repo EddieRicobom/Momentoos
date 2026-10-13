@@ -433,3 +433,135 @@ input {
     transition: none;
   }
 }
+
+/* ---------- Etapa C: projetos, formulários, backup ---------- */
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.project-list {
+  display: grid;
+  gap: 12px;
+}
+
+.project-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.project-thumb {
+  width: 72px;
+  height: 72px;
+  flex: none;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.project-thumb-empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 24px;
+}
+
+.project-info {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+.project-name {
+  overflow-wrap: anywhere;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.badge[data-tone='ok'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.badge[data-tone='warn'] {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.badge[data-tone='bad'] {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
+.text-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.text-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.field-label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.rename-form {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.form-error {
+  margin: 0;
+  color: var(--bad);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.btn-danger {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #2a0505;
+  font-weight: 600;
+}
+
+.pick-list {
+  display: grid;
+  gap: 4px;
+}
+
+.pick-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 4px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--border);
+}
+
+.check-input {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  accent-color: var(--accent);
+}

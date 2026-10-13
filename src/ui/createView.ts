@@ -1,13 +1,28 @@
+import { NAME_MAX_LENGTH } from '../storage/model';
+import { createProject } from '../storage/projects';
 import { prepareTargetImage, type PreparedTarget } from '../tracking/imagePrep';
 import { compileTarget, inspectTargetBuffer } from '../tracking/targetCompiler';
 import { statusChip, topBar } from './components';
 import type { AppTarget, View } from './context';
-import { formatBytes, formatSeconds, h } from './dom';
+import { describeError, downloadBytes, formatBytes, formatDate, formatSeconds, h } from './dom';
 
 export const createView: View = (context, root) => {
   const { store } = context;
   const chip = statusChip(store);
   let busy = false;
+  let disposed = false;
+  let saving = false;
+
+  const nameInput = h('input', {
+    class: 'text-input',
+    type: 'text',
+    maxlength: String(NAME_MAX_LENGTH),
+    autocomplete: 'off',
+    'aria-label': 'Nome do projeto',
+  });
+  nameInput.value = defaultProjectName();
+  const saveError = h('p', { class: 'form-error', role: 'alert' });
+  saveError.hidden = true;
 
   const progress = h('progress', {
     class: 'progress',
@@ -70,8 +85,6 @@ export const createView: View = (context, root) => {
         store.dispatch({ type: 'PREPARE_PROGRESS', percent }),
       );
 
-      const previous = context.getTarget();
-      if (previous?.previewUrl) URL.revokeObjectURL(previous.previewUrl);
       context.setTarget({
         buffer: compiled.buffer,
         width: compiled.width,
@@ -80,7 +93,11 @@ export const createView: View = (context, root) => {
         label: file.name || 'foto',
         previewUrl: prepared.objectUrl,
         compileMs: compiled.compileMs,
+        projectId: null,
+        referenceImage: { blob: prepared.blob, width: prepared.width, height: prepared.height },
       });
+      nameInput.value = defaultProjectName();
+      saveError.hidden = true;
       store.dispatch({ type: 'PREPARE_DONE' });
     } catch (error) {
       prepared?.dispose();
@@ -99,8 +116,6 @@ export const createView: View = (context, root) => {
     try {
       const buffer = new Uint8Array(await file.arrayBuffer());
       const info = inspectTargetBuffer(buffer);
-      const previous = context.getTarget();
-      if (previous?.previewUrl) URL.revokeObjectURL(previous.previewUrl);
       preview.hidden = true;
       preview.removeAttribute('src');
       context.setTarget({
@@ -111,7 +126,11 @@ export const createView: View = (context, root) => {
         label: file.name,
         previewUrl: null,
         compileMs: null,
+        projectId: null,
+        referenceImage: null,
       });
+      nameInput.value = defaultProjectName(file.name);
+      saveError.hidden = true;
       store.dispatch({ type: 'TARGET_LOADED' });
     } catch (error) {
       store.dispatch({ type: 'TARGET_LOAD_FAILED', message: describeError(error) });
@@ -140,16 +159,16 @@ export const createView: View = (context, root) => {
     const details = [
       `${target.width}×${target.height} px`,
       formatBytes(target.buffer.byteLength),
-      target.compileMs !== null ? `compilado em ${formatSeconds(target.compileMs)}` : 'carregado de arquivo .mind',
+      target.compileMs !== null
+        ? `compilado em ${formatSeconds(target.compileMs)}`
+        : target.origin === 'project'
+          ? 'aberto de um projeto salvo'
+          : 'carregado de arquivo .mind',
     ];
     result.append(
       h('h2', { class: 'card-title' }, 'Alvo pronto'),
       h('p', { class: 'muted' }, details.join(' · ')),
-      h(
-        'p',
-        { class: 'muted' },
-        'O alvo está só na memória deste app aberto. Baixe o .mind se quiser reaproveitá-lo sem recompilar; salvar no aparelho automaticamente chega na Etapa C.',
-      ),
+      ...saveSection(target),
       h(
         'div',
         { class: 'row' },
@@ -165,6 +184,75 @@ export const createView: View = (context, root) => {
         ),
       ),
     );
+  }
+
+  function saveSection(target: AppTarget): Node[] {
+    if (target.projectId !== null) {
+      return [
+        h(
+          'p',
+          { class: 'muted' },
+          'Salvo neste aparelho. Para reabrir sem recompilar, use "Meus projetos".',
+        ),
+        h(
+          'div',
+          { class: 'row' },
+          h('button', { class: 'btn', type: 'button', onclick: () => context.navigate('projects') }, 'Ver meus projetos'),
+        ),
+      ];
+    }
+    const note =
+      target.referenceImage === null
+        ? 'Este alvo veio de um arquivo .mind, sem a foto original: dá para salvá-lo e usá-lo, mas não para recompilar depois.'
+        : 'Ainda não salvo: ele existe só enquanto este app estiver aberto. Salve para reabrir depois sem recompilar. A foto fica guardada só neste aparelho.';
+    const saveButton = h(
+      'button',
+      { class: 'btn btn-primary', type: 'button', onclick: () => void saveProject(target, saveButton) },
+      'Salvar projeto',
+    );
+    return [
+      h('p', { class: 'muted' }, note),
+      h('label', { class: 'field-label' }, 'Nome do projeto', nameInput),
+      saveError,
+      h('div', { class: 'row' }, saveButton),
+    ];
+  }
+
+  async function saveProject(target: AppTarget, button: HTMLButtonElement): Promise<void> {
+    if (saving) return;
+    saving = true;
+    button.disabled = true;
+    saveError.hidden = true;
+    try {
+      const repo = await context.getRepository();
+      const reference = target.referenceImage;
+      const record = await createProject(repo, {
+        name: nameInput.value,
+        anchor: target.buffer,
+        referenceImage: reference
+          ? {
+              data: await reference.blob.arrayBuffer(),
+              mimeType: reference.blob.type || 'image/png',
+              width: reference.width,
+              height: reference.height,
+            }
+          : null,
+      });
+      // Se o alvo mudou enquanto salvava, o projeto foi salvo mas o alvo atual é outro.
+      if (context.getTarget() === target) {
+        context.setTarget({ ...target, projectId: record.id, referenceImage: null });
+      }
+      context.toast(`Projeto "${record.name}" salvo.`);
+    } catch (error) {
+      if (!disposed) {
+        saveError.textContent = describeError(error);
+        saveError.hidden = false;
+        button.disabled = false;
+      }
+    } finally {
+      saving = false;
+      if (!disposed) renderResult();
+    }
   }
 
   const unsubscribe = store.subscribe((state) => {
@@ -210,6 +298,7 @@ export const createView: View = (context, root) => {
   renderResult();
 
   return () => {
+    disposed = true;
     unsubscribe();
     chip.destroy();
   };
@@ -222,20 +311,12 @@ function takeFile(input: HTMLInputElement, handler: (file: File) => Promise<void
   if (file) void handler(file);
 }
 
-function describeError(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-  return 'Erro desconhecido.';
+function defaultProjectName(fileName?: string): string {
+  const base = fileName?.replace(/\.[^.]+$/, '').trim();
+  return base ? base.slice(0, NAME_MAX_LENGTH) : `Tatuagem ${formatDate(new Date())}`;
 }
 
 function downloadTarget(target: AppTarget): void {
   const base = target.label.replace(/\.[^.]+$/, '').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '');
-  const name = `${base || 'tatuagem'}.mind`;
-  const url = URL.createObjectURL(
-    new Blob([target.buffer.slice()], { type: 'application/octet-stream' }),
-  );
-  const link = h('a', { href: url, download: name });
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  downloadBytes(target.buffer, `${base || 'tatuagem'}.mind`, 'application/octet-stream');
 }

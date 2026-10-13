@@ -1,10 +1,14 @@
 import './styles.css';
+import { openRepository, type ProjectRepository } from './storage/repository';
 import { createTrackingStore } from './tracking/store';
 import { showToast } from './ui/components';
 import { cameraView } from './ui/cameraView';
 import type { AppContext, AppTarget, View, ViewName } from './ui/context';
 import { createView } from './ui/createView';
+import { exportView } from './ui/exportView';
 import { homeView } from './ui/homeView';
+import { importView } from './ui/importView';
+import { projectsView } from './ui/projectsView';
 import { settingsView } from './ui/settingsView';
 
 const VIEWS: Record<ViewName, View> = {
@@ -12,6 +16,9 @@ const VIEWS: Record<ViewName, View> = {
   create: createView,
   camera: cameraView,
   settings: settingsView,
+  projects: projectsView,
+  import: importView,
+  export: exportView,
 };
 
 const root = document.getElementById('app');
@@ -20,6 +27,7 @@ if (!root) throw new Error('Elemento #app não encontrado em index.html');
 let target: AppTarget | null = null;
 let cleanup: (() => void) | null = null;
 let current: ViewName = 'home';
+let repositoryPromise: Promise<ProjectRepository> | null = null;
 
 function render(view: ViewName): void {
   cleanup?.();
@@ -34,7 +42,19 @@ const context: AppContext = {
   store: createTrackingStore(),
   getTarget: () => target,
   setTarget: (next) => {
+    const previousUrl = target?.previewUrl ?? null;
+    if (previousUrl && previousUrl !== (next?.previewUrl ?? null)) URL.revokeObjectURL(previousUrl);
     target = next;
+  },
+  getRepository() {
+    if (!repositoryPromise) {
+      repositoryPromise = openRepository();
+      // Se a abertura falhar, a próxima tentativa começa do zero.
+      repositoryPromise.catch(() => {
+        repositoryPromise = null;
+      });
+    }
+    return repositoryPromise;
   },
   navigate(view) {
     if (view === current) return;

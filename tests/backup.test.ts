@@ -216,6 +216,17 @@ describe('ida e volta (exportar → importar)', () => {
     expect(await repo.list()).toHaveLength(2);
   });
 
+  it('reimportar um backup cujo original foi alterado cria uma nova cópia a cada vez (limitação documentada)', async () => {
+    const repo = await freshRepository();
+    const original = await addProject(repo, 'Braço', 1);
+    const { bytes } = await exportBackup(repo, 'all', OPTIONS);
+    await repo.updateMeta(original.id, { name: 'Editado', updatedAt: '2026-12-01T00:00:00.000Z' });
+
+    await importBackup(repo, bytes);
+    await importBackup(repo, bytes);
+    expect(await repo.list()).toHaveLength(3);
+  });
+
   it('backup com alvo em formato antigo e imagem de referência entra como "precisa recompilar"', async () => {
     const origem = await freshRepository('origem');
     const old = makeMind({ version: 1, filler: 50 });

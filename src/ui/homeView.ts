@@ -15,10 +15,7 @@ export const homeView: View = (context, root) => {
     {
       title: 'Meus projetos',
       hint: 'Projetos guardados no aparelho',
-      run: () =>
-        context.toast(
-          'Ainda não disponível: projetos salvos no aparelho chegam na Etapa C. Por enquanto o alvo existe só enquanto o app está aberto.',
-        ),
+      run: () => context.navigate('projects'),
     },
     {
       title: 'Criar âncora',
@@ -30,8 +27,8 @@ export const homeView: View = (context, root) => {
       hint: 'Procurar a tatuagem e ver o objeto virtual',
       run: () => {
         if (!context.getTarget()) {
-          context.toast('Crie uma âncora primeiro: a câmera precisa de um alvo.');
-          context.navigate('create');
+          context.toast('A câmera precisa de um alvo: abra um projeto salvo ou crie uma âncora.');
+          context.navigate('projects');
           return;
         }
         context.navigate('camera');
@@ -40,18 +37,12 @@ export const homeView: View = (context, root) => {
     {
       title: 'Importar projeto',
       hint: 'Trazer um backup de outro aparelho',
-      run: () =>
-        context.toast(
-          'Ainda não disponível: importação de backup (ZIP) chega na Etapa C. Hoje você pode carregar um alvo .mind em "Criar âncora".',
-        ),
+      run: () => context.navigate('import'),
     },
     {
       title: 'Exportar backup',
       hint: 'Levar seus projetos para outro aparelho',
-      run: () =>
-        context.toast(
-          'Ainda não disponível: backup em ZIP chega na Etapa C. Hoje você pode baixar o alvo .mind em "Criar âncora".',
-        ),
+      run: () => context.navigate('export'),
     },
     {
       title: 'Configurações',
@@ -96,7 +87,7 @@ export const homeView: View = (context, root) => {
       h(
         'p',
         { class: 'footnote' },
-        'Protótipo em desenvolvimento (Etapas A e B). O reconhecimento em tatuagens reais ainda precisa ser testado no celular: veja docs/TESTES-MANUAIS.md.',
+        'Protótipo em desenvolvimento (Etapas A, B e C). O reconhecimento em tatuagens reais e o salvamento no celular ainda precisam ser testados no aparelho: veja docs/TESTES-MANUAIS.md.',
       ),
     ),
   );

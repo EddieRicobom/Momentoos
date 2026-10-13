@@ -13,7 +13,7 @@ tatuagem nunca sai do aparelho.
 |---|---|---|
 | A | Ambiente, estrutura, documentação | Concluída |
 | B | Câmera, compilação do alvo, demo de rastreamento | **Implementada, ainda NÃO validada em celular** |
-| C | Salvar projetos (IndexedDB), recarregar, exportar/importar ZIP | Não iniciada |
+| C | Salvar projetos (IndexedDB), recarregar, exportar/importar ZIP | **Implementada, testada só com simulações; ainda NÃO validada em celular** |
 | D | Conteúdos virtuais (imagem, GIF, vídeo, GLB) e editor | Não iniciada |
 | E | PWA offline, otimização, publicação | Não iniciada (há um fluxo de publicação manual, ainda não executado) |
 
@@ -35,8 +35,22 @@ celular. Nenhum teste em navegador com câmera foi executado até agora.
   alvo pronto, procurando, reconhecida, **perdida**, erro. Contar perdas e
   recuperações.
 
-Botões que ainda não fazem a ação (Meus projetos, Importar projeto, Exportar
-backup) dizem na tela que ainda não estão disponíveis.
+Etapa C (persistência):
+
+- Salvar o alvo compilado (e a foto de referência) como **projeto** no
+  aparelho (IndexedDB), com nome, e reabri-lo depois **sem recompilar**.
+- "Meus projetos": listar, abrir a câmera, renomear, excluir (com confirmação),
+  exportar um projeto e **recompilar** a partir da foto guardada quando o alvo
+  estiver corrompido ou em formato antigo.
+- Exportar e importar **backup em ZIP** (`.tattoo-ar.zip`), com verificação de
+  integridade (SHA-256) e tratamento do arquivo como entrada não confiável.
+  Formato: [docs/FORMATO-BACKUP.md](docs/FORMATO-BACKUP.md).
+- Em Configurações: uso de armazenamento estimado e pedido de armazenamento
+  persistente (o navegador decide se concede).
+
+Tudo da Etapa C foi verificado por testes automatizados com **IndexedDB e DOM
+simulados**. Não foi executado em navegador nem em celular reais: a Parte 7 de
+[docs/TESTES-MANUAIS.md](docs/TESTES-MANUAIS.md) cobre isso.
 
 ## Requisitos
 
@@ -92,8 +106,12 @@ npm test             # testes automatizados (sem câmera)
 
 Os testes automatizados cobrem a máquina de estados do rastreamento (inclusive
 perda e recuperação), a classificação dos erros de câmera, o cálculo de redução
-da imagem e o store. **Não** cobrem compilação do MindAR, câmera nem
-rastreamento, que dependem de navegador e hardware. Para isso, siga
+da imagem e o store; e, na Etapa C, o modelo e a validação de projetos, o
+repositório (IndexedDB simulado, incluindo atomicidade e registros corrompidos),
+o backup ZIP (inclusive arquivos adulterados, caminhos maliciosos e limites de
+tamanho) e a lógica das telas (DOM simulado). **Não** cobrem compilação do
+MindAR, câmera nem rastreamento, que dependem de navegador e hardware, nem o
+comportamento real do IndexedDB, do download e do seletor de arquivos do celular. Para isso, siga
 [docs/TESTES-MANUAIS.md](docs/TESTES-MANUAIS.md).
 
 ## Gerar o build
@@ -153,6 +171,16 @@ limitações: [docs/RASTREAMENTO.md](docs/RASTREAMENTO.md).
   O `main` do pacote é um `index.js` vazio e não há tipos. O código-fonte usa
   `?worker&inline` e `?raw`, que só o Vite entende, por isso `optimizeDeps.exclude`.
   Os tipos estão escritos à mão em `src/types/mind-ar.d.ts`.
+- **Bibliotecas da Etapa C, todas empacotadas (sem CDN):** `fflate` 0.8.3 (ZIP),
+  `@msgpack/msgpack` 2.8.0 (leitura do cabeçalho do `.mind`, o mesmo formato
+  que o MindAR usa). Só nos testes: `fake-indexeddb` (IndexedDB simulado) e
+  `happy-dom` (DOM simulado). Versões fixadas.
+- **`npm audit`: 4 avisos de severidade moderada, sem correção disponível.** Vêm
+  de uma cadeia transitiva do MindAR (`mind-ar → @tensorflow/tfjs → argparse →
+  sprintf-js`, negação de serviço por precisão ilimitada em `sprintf`). Uma
+  busca por "sprintf" no `dist/` não encontrou nada, então esse código não parece
+  ir para o navegador; isso é uma verificação textual do bundle, não uma análise
+  completa. Não foi aplicado `npm audit fix --force` (forçaria trocar o MindAR).
 - **Sem CDN.** Tudo (MindAR, TensorFlow.js, Three.js, workers) é empacotado no
   build. Conferido no `dist/`: nenhuma referência a CDN.
 
@@ -163,8 +191,10 @@ limitações: [docs/RASTREAMENTO.md](docs/RASTREAMENTO.md).
 - A câmera só é pedida quando você abre a tela da câmera.
 - `.gitignore` bloqueia `*.mind`, `private/` e `*.tattoo-ar.zip`, para você não
   versionar fotos de tatuagem ou alvos por engano.
-- Limpar os dados do navegador pode apagar projetos locais (a partir da Etapa C).
-  Faça backups exportados com frequência.
+- Limpar os dados do navegador ou do site pode apagar os projetos locais. Faça
+  backups exportados com frequência.
+- O backup `.tattoo-ar.zip` **não é criptografado** e contém a foto da tatuagem:
+  guarde-o em lugar seu.
 
 ## Limitações conhecidas
 
@@ -179,6 +209,11 @@ limitações: [docs/RASTREAMENTO.md](docs/RASTREAMENTO.md).
   ouvinte de `resize` na janela (ele não expõe como removê-lo). Efeito pequeno,
   mas existe.
 - Sem modo offline ainda (Etapa E).
+- Armazenamento no navegador não é garantia de guarda: o navegador pode apagar
+  dados do site em situações de pouco espaço, e "armazenamento persistente" é
+  só um pedido que ele pode negar. O backup em ZIP é a proteção real.
+- Reimportar várias vezes um backup cujo projeto original foi alterado depois
+  cria uma nova cópia a cada vez (nada é sobrescrito).
 
 ## Estrutura
 
@@ -187,7 +222,15 @@ src/
   main.ts                 inicialização e navegação
   styles.css              visual escuro, mobile-first
   capabilities.ts         checagem de compatibilidade do navegador
+  storage/                Etapa C: persistência e backup
+    model.ts              registro do projeto, validação, migrações, saúde
+    repository.ts         IndexedDB (projetos + arquivos, transações)
+    projects.ts           criar, abrir (com verificação), recompilar, renomear
+    backup.ts             exportar/importar ZIP (entrada não confiável)
+    storageInfo.ts        uso/cota e armazenamento persistente
+    errors.ts, hash.ts    erros tipados, SHA-256 e ids
   tracking/
+    mindFormat.ts         leitura do cabeçalho do .mind
     state.ts              máquina de estados (pura, testada)
     store.ts              store mínimo
     camera.ts             classificação de erros e checagem prévia da câmera
@@ -198,6 +241,6 @@ src/
   ui/                     telas e componentes
   types/mind-ar.d.ts      tipos escritos à mão para o MindAR
 tests/                    testes automatizados
-docs/                     rastreamento e roteiro de testes manuais
+docs/                     rastreamento, formato de backup e roteiro de testes manuais
 stubs/canvas/             pacote vazio que substitui o node-canvas
 ```
