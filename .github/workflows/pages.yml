@@ -1,0 +1,53 @@
+# Publicação no GitHub Pages — SOMENTE MANUAL.
+#
+# Este fluxo NÃO roda sozinho a cada push. Para publicar:
+#   1. No GitHub: Settings → Pages → Build and deployment → Source: "GitHub Actions".
+#   2. Aba Actions → "Publicar no GitHub Pages" → Run workflow.
+#
+# Versões das actions conferidas na documentação oficial do GitHub Pages
+# (checkout v6, configure-pages v5, upload-pages-artifact v4, deploy-pages v4).
+# actions/setup-node@v6 NÃO consta nessa página e não foi verificado; se o
+# fluxo falhar nesse passo, ajuste para a versão atual.
+#
+# Este arquivo ainda não foi executado.
+name: Publicar no GitHub Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

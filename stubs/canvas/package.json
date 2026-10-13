@@ -1,0 +1,7 @@
+{
+  "name": "canvas",
+  "version": "0.0.0-stub",
+  "description": "Pacote vazio que substitui o node-canvas exigido pelo mind-ar. O node-canvas só é usado pelo compilador offline do MindAR (Node), que este projeto NÃO usa: aqui a compilação acontece no navegador. Veja o README, seção 'Dependências'.",
+  "private": true,
+  "main": "index.js"
+}

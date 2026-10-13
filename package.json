@@ -1,0 +1,29 @@
+{
+  "name": "momentoos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tattoo AR: realidade aumentada ancorada em tatuagens reais, 100% local no navegador (PWA).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "dev:https": "vite --host --mode https",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "mind-ar": "1.2.5",
+    "three": "0.160.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.160.0",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
+  },
+  "overrides": {
+    "canvas": "file:./stubs/canvas"
+  }
+}
