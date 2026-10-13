@@ -1,4 +1,8 @@
 import { MindARThree } from 'mind-ar/src/image-target/three.js';
+import * as THREE from 'three';
+import { browserLoaders } from '../scene/loaders';
+import { SceneRuntime, type RuntimeSummary } from '../scene/runtime';
+import type { SceneItem } from '../storage/model';
 import { createVirtualObject } from './virtualObject';
 
 export interface ArSessionOptions {
@@ -8,6 +12,13 @@ export interface ArSessionOptions {
   targetBuffer: Uint8Array;
   /** Dimensões do alvo (para desenhar o objeto com a proporção correta). */
   targetSize: { width: number; height: number };
+  /** Itens da cena a mostrar sobre a tatuagem (vazio = só o objeto de teste). */
+  sceneItems?: readonly SceneItem[];
+  /** Bytes (já conferidos) do arquivo de um item. */
+  openItemFile?(itemId: string): Promise<ArrayBuffer>;
+  /** Mostrar a moldura de teste (alinhamento) junto com a cena. */
+  showTestObject?: boolean;
+  onSceneChange?(summary: RuntimeSummary): void;
   onReady(): void;
   onFound(): void;
   onLost(): void;
@@ -29,6 +40,9 @@ export class ArSession {
   private stopped = false;
   private updateCount = 0;
   private rateTimer: number | null = null;
+  private runtime: SceneRuntime | null = null;
+  private testObject: THREE.Group | null = null;
+  private readonly clock = new THREE.Clock();
 
   constructor(private readonly options: ArSessionOptions) {}
 
@@ -52,9 +66,29 @@ export class ArSession {
     this.mindar = mindar;
 
     const anchor = mindar.addAnchor(0);
-    anchor.group.add(createVirtualObject(targetSize.width, targetSize.height));
-    anchor.onTargetFound = () => this.options.onFound();
-    anchor.onTargetLost = () => this.options.onLost();
+    this.testObject = createVirtualObject(targetSize.width, targetSize.height);
+    this.testObject.visible = this.options.showTestObject ?? true;
+    anchor.group.add(this.testObject);
+
+    const { sceneItems, openItemFile } = this.options;
+    if (sceneItems && sceneItems.length > 0 && openItemFile) {
+      this.runtime = new SceneRuntime({
+        items: sceneItems,
+        openFile: openItemFile,
+        loaders: browserLoaders,
+        ...(this.options.onSceneChange ? { onChange: this.options.onSceneChange } : {}),
+      });
+      anchor.group.add(this.runtime.group);
+    }
+
+    anchor.onTargetFound = () => {
+      void this.runtime?.setTracking(true);
+      this.options.onFound();
+    };
+    anchor.onTargetLost = () => {
+      void this.runtime?.setTracking(false);
+      this.options.onLost();
+    };
     anchor.onTargetUpdate = () => {
       if (anchor.visible) this.updateCount += 1;
     };
@@ -74,9 +108,14 @@ export class ArSession {
       return;
     }
 
+    this.clock.start();
     mindar.renderer.setAnimationLoop(() => {
+      this.runtime?.update(this.clock.getDelta());
       mindar.renderer.render(mindar.scene, mindar.camera);
     });
+
+    // Os itens carregam depois que a câmera já está rodando; cada um aparece quando fica pronto.
+    void this.runtime?.load();
 
     this.rateTimer = window.setInterval(() => {
       this.options.onTrackingRate?.(this.updateCount);
@@ -84,6 +123,15 @@ export class ArSession {
     }, 1000);
 
     this.options.onReady();
+  }
+
+  setTestObjectVisible(visible: boolean): void {
+    if (this.testObject) this.testObject.visible = visible;
+  }
+
+  /** Libera áudio/vídeo bloqueados pelo autoplay; chamar de dentro de um toque. */
+  async resumeMedia(): Promise<void> {
+    await this.runtime?.resume();
   }
 
   /** Para a câmera e libera vídeo, canvas, worker e URL do alvo. Idempotente. */
@@ -97,6 +145,8 @@ export class ArSession {
       window.clearInterval(this.rateTimer);
       this.rateTimer = null;
     }
+    this.runtime?.dispose();
+    this.runtime = null;
     const mindar = this.mindar;
     this.mindar = null;
     if (mindar) {

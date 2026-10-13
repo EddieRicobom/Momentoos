@@ -363,8 +363,24 @@ input {
   right: 12px;
   bottom: calc(12px + var(--safe-bottom));
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: center;
   z-index: 5;
+}
+
+.hud-problems {
+  margin: 0;
+  padding: 6px 12px 6px 28px;
+  border-radius: 10px;
+  background: rgba(8, 10, 12, 0.72);
+  font-size: 0.82rem;
+  max-width: 40ch;
+  color: var(--text);
+}
+
+.camera-bar .btn[aria-pressed='true'] {
+  border-color: var(--accent, #3ee6b0);
 }
 
 .camera-bar .btn {
