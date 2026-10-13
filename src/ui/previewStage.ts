@@ -1,11 +1,13 @@
 import * as THREE from 'three';
-import { cameraPose, rayHitsPlane, type PreviewView } from '../scene/picking';
+import { GestureTracker } from '../scene/gestures';
+import { cameraPose, rayHitsPlane, type Point, type PreviewView } from '../scene/picking';
 import type { SceneRuntime } from '../scene/runtime';
 
 /**
  * Prévia 3D do editor: a foto de referência (o alvo, 1 unidade de largura) num
  * plano, com os itens da cena por cima, vista de frente ou inclinada. Tocar
- * seleciona um item; arrastar o move no plano da pele.
+ * seleciona um item; arrastar com um dedo o move no plano da pele; girar dois
+ * dedos gira o item selecionado (em Z).
  *
  * Esta é a única parte do editor que depende de WebGL, e NÃO foi exercitada em
  * navegador real (os testes substituem este módulo). Se o WebGL não existir,
@@ -20,6 +22,9 @@ export interface PreviewStageOptions {
   getSelectedId(): string | null;
   onSelect(id: string | null): void;
   onDrag(id: string, x: number, y: number): void;
+  /** Giro atual (Z, graus) do item, ou null se ele não puder girar. */
+  getRotationZ(id: string): number | null;
+  onRotate(id: string, degrees: number): void;
 }
 
 export interface PreviewStage {
@@ -100,14 +105,13 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
   observer.observe(container);
   applyCamera();
 
-  // Seleção e arrasto.
+  // Seleção, arrasto (1 dedo) e giro (2 dedos): a lógica está em scene/gestures.ts.
   const raycaster = new THREE.Raycaster();
-  let drag: { id: string; pointerId: number; planeZ: number; grabX: number; grabY: number } | null = null;
 
-  const setRay = (event: PointerEvent): void => {
+  const setRay = (point: Point): void => {
     const rect = renderer.domElement.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    const x = ((point.x - rect.left) / rect.width) * 2 - 1;
+    const y = -((point.y - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
   };
 
@@ -118,31 +122,47 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       planeZ,
     );
 
+  const gestures = new GestureTracker({
+    pick(point) {
+      if (!runtime) return null;
+      setRay(point);
+      const hit = raycaster.intersectObject(runtime.group, true).find((h) => runtime!.itemIdOf(h.object) !== null);
+      return hit ? runtime.itemIdOf(hit.object) : null;
+    },
+    select: options.onSelect,
+    startDrag(id, point) {
+      const root = runtime?.rootOf(id);
+      if (!root) return null;
+      setRay(point);
+      const start = planeHit(root.position.z);
+      if (!start) return null;
+      const grabX = start[0] - root.position.x;
+      const grabY = start[1] - root.position.y;
+      const planeZ = root.position.z;
+      return (next) => {
+        setRay(next);
+        const hit = planeHit(planeZ);
+        if (hit) options.onDrag(id, hit[0] - grabX, hit[1] - grabY);
+      };
+    },
+    selectedId: options.getSelectedId,
+    rotationZ: options.getRotationZ,
+    rotate: options.onRotate,
+  });
+
+  const toPoint = (event: PointerEvent): Point => ({ x: event.clientX, y: event.clientY });
+
   const onDown = (event: PointerEvent): void => {
     if (!runtime) return;
-    setRay(event);
-    const hit = raycaster.intersectObject(runtime.group, true).find((h) => runtime!.itemIdOf(h.object) !== null);
-    const id = hit ? runtime.itemIdOf(hit.object) : null;
-    options.onSelect(id);
-    if (!id) return;
-    const root = runtime.rootOf(id);
-    if (!root) return;
-    const point = planeHit(root.position.z);
-    if (!point) return;
-    drag = { id, pointerId: event.pointerId, planeZ: root.position.z, grabX: point[0] - root.position.x, grabY: point[1] - root.position.y };
-    renderer.domElement.setPointerCapture(event.pointerId);
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch {
+      /* sem captura o gesto continua dentro do canvas */
+    }
+    gestures.down(event.pointerId, toPoint(event));
   };
-
-  const onMove = (event: PointerEvent): void => {
-    if (!drag || event.pointerId !== drag.pointerId) return;
-    setRay(event);
-    const point = planeHit(drag.planeZ);
-    if (point) options.onDrag(drag.id, point[0] - drag.grabX, point[1] - drag.grabY);
-  };
-
-  const onUp = (event: PointerEvent): void => {
-    if (drag && event.pointerId === drag.pointerId) drag = null;
-  };
+  const onMove = (event: PointerEvent): void => gestures.move(event.pointerId, toPoint(event));
+  const onUp = (event: PointerEvent): void => gestures.up(event.pointerId, event.type === 'pointercancel');
 
   const canvas = renderer.domElement;
   canvas.addEventListener('pointerdown', onDown);

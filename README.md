@@ -68,7 +68,8 @@ Etapa D (cena 3D ancorada):
   animação do modelo).
 - Editor ("Meus projetos" → "Adicionar itens"): adicionar vários arquivos,
   duplicar, remover, ocultar, e ajustar cada item numa **prévia 3D sobre a foto de
-  referência** (de frente ou inclinada; tocar seleciona, arrastar posiciona).
+  referência** (de frente ou inclinada; tocar seleciona, arrastar com um dedo posiciona e
+  **girar dois dedos gira** o item selecionado no plano dele).
 - Na câmera, os itens aparecem ancorados quando a tatuagem é reconhecida;
   vídeo, áudio, GIF e animações **tocam ao reconhecer e pausam ao perder**.
   Se o navegador bloquear o autoplay, aparece "Tocar áudio e vídeo".
@@ -289,7 +290,8 @@ src/
     runtime.ts            monta a cena, toca/pausa ao reconhecer/perder
     loaders.ts            imagem, GIF, vídeo, GLB e áudio (precisam de navegador)
     editorModel.ts        controles, limites e alterações do editor (puro)
-    picking.ts            raio × plano e câmera da prévia (puro)
+    picking.ts            raio × plano, câmera da prévia e matemática do giro (puro)
+    gestures.ts           gestos de 1 e 2 dedos da prévia (puro, testado)
     summaryText.ts        textos de andamento e erros
   tracking/
     mindFormat.ts         leitura do cabeçalho do .mind

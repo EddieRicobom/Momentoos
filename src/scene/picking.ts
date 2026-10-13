@@ -44,3 +44,34 @@ export function cameraPose(view: PreviewView, targetAspect: number, viewAspect: 
   const tilt = view === 'tilted' ? (TILT_DEGREES * Math.PI) / 180 : 0;
   return { position: [0, -Math.sin(tilt) * distance, Math.cos(tilt) * distance], fov };
 }
+
+// ------------------------------------------------------------------ gesto de dois dedos
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/** Distância mínima (px) entre os dedos para o ângulo ser confiável. */
+export const MIN_TWIST_DISTANCE = 12;
+
+/** Ângulo, em graus, da linha que vai do dedo `a` ao dedo `b` (coordenadas de tela, y para baixo). */
+export const pointerAngleDeg = (a: Point, b: Point): number => (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+
+export const pointerDistance = (a: Point, b: Point): number => Math.hypot(b.x - a.x, b.y - a.y);
+
+/** Leva um ângulo para o intervalo (-180, 180]. */
+export function wrapDegrees(degrees: number): number {
+  if (!Number.isFinite(degrees)) return 0;
+  const wrapped = ((((degrees + 180) % 360) + 360) % 360) - 180;
+  return wrapped === -180 ? 180 : wrapped;
+}
+
+/**
+ * Giro do item (em Z, graus) depois de torcer os dois dedos. Na tela o eixo y
+ * aponta para baixo, então girar os dedos no sentido horário AUMENTA o ângulo
+ * da tela e deve DIMINUIR o giro do item (anti-horário positivo visto de frente).
+ */
+export function twistedRotation(startRotation: number, startAngle: number, currentAngle: number): number {
+  return wrapDegrees(startRotation - wrapDegrees(currentAngle - startAngle));
+}
