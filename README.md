@@ -28,6 +28,12 @@ celular. Nenhum teste em navegador com câmera foi executado até agora.
 - Escolher uma foto da galeria ou fotografar (o botão usa o atributo `capture`
   do HTML, que no Android costuma abrir o app de câmera; não testado em aparelho).
 - Reduzir a foto e compilar o alvo no navegador com o compilador do MindAR.
+- **Recortar na tatuagem** (com sugestão automática) e escolher o contraste interno
+  (Original, Equilibrado ou Forte) antes de compilar, com prévia de como o
+  rastreador vai enxergar a imagem. **O efeito disso no reconhecimento NÃO foi
+  medido**: a justificativa técnica está em
+  [docs/RASTREAMENTO.md](docs/RASTREAMENTO.md) e a comparação A/B, na Parte 8 de
+  [docs/TESTES-MANUAIS.md](docs/TESTES-MANUAIS.md).
 - Baixar o alvo compilado (`.mind`) e recarregá-lo depois sem recompilar.
 - Abrir a câmera, procurar a tatuagem e desenhar um objeto de teste (moldura,
   cubo e eixos) sobre ela.
@@ -234,7 +240,9 @@ src/
     state.ts              máquina de estados (pura, testada)
     store.ts              store mínimo
     camera.ts             classificação de erros e checagem prévia da câmera
-    imagePrep.ts          leitura e redução da foto
+    imagePrep.ts          leitura, recorte, redução e realce da foto
+    targetPixels.ts       cinza, contraste, CLAHE e sugestão de recorte (puro)
+    cropGeometry.ts       geometria do recorte (puro)
     targetCompiler.ts     compilação e validação do .mind
     arSession.ts          sessão MindARThree (câmera + rastreio)
     virtualObject.ts      objeto de teste ancorado

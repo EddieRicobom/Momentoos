@@ -23,6 +23,8 @@ export interface AppTarget {
   projectId: string | null;
   /** Foto usada na compilação, disponível até salvar (ou trocar de alvo). */
   referenceImage: PendingReferenceImage | null;
+  /** Resumo do preparo (recorte e contraste) para mostrar na tela, quando houver. */
+  note?: string | null;
 }
 
 export type ViewName = 'home' | 'create' | 'camera' | 'settings' | 'projects' | 'import' | 'export';

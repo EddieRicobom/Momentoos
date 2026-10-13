@@ -42,6 +42,25 @@ vi.mock('../src/tracking/targetCompiler', async () => {
 
 vi.mock('../src/tracking/imagePrep', () => ({
   MAX_TARGET_SIDE: 1024,
+  loadSourceImage: vi.fn(async () => ({
+    image: {},
+    objectUrl: 'blob:origem',
+    width: 1000,
+    height: 800,
+    dispose: vi.fn(),
+  })),
+  suggestCrop: vi.fn(() => ({ x: 0.2, y: 0.25, w: 0.5, h: 0.4 })),
+  renderPreview: vi.fn(() => document.createElement('canvas')),
+  prepareTargetFromSource: vi.fn(async (_source: unknown, options?: { crop?: unknown; enhance?: string }) => ({
+    image: {},
+    blob: new Blob(['png'], { type: 'image/png' }),
+    objectUrl: 'blob:preparada',
+    width: 640,
+    height: 480,
+    enhance: options?.enhance ?? 'none',
+    crop: options?.crop ?? null,
+    dispose: vi.fn(),
+  })),
   prepareTargetImage: vi.fn(async () => ({
     image: {},
     blob: new Blob(),
@@ -57,6 +76,8 @@ const { exportView } = await import('../src/ui/exportView');
 const { importView } = await import('../src/ui/importView');
 const { createView } = await import('../src/ui/createView');
 const { compileTarget } = await import('../src/tracking/targetCompiler');
+const imagePrep = await import('../src/tracking/imagePrep');
+const { createCropEditor } = await import('../src/ui/cropEditor');
 
 interface Harness {
   context: AppContext;
@@ -80,6 +101,9 @@ beforeEach(() => {
   };
   document.body.replaceChildren();
   vi.mocked(compileTarget).mockClear();
+  vi.mocked(imagePrep.prepareTargetFromSource).mockClear();
+  vi.mocked(imagePrep.suggestCrop).mockClear();
+  vi.mocked(imagePrep.renderPreview).mockClear();
 });
 
 afterEach(() => {
@@ -492,5 +516,174 @@ describe('Criar âncora: salvar projeto', () => {
     await until(() => h.context.store.getState().status === 'error');
     expect(hasButton(h.root, 'Salvar projeto')).toBe(false);
     expect(await h.repo.list()).toEqual([]);
+  });
+});
+
+describe('Criar âncora: recorte e contraste', () => {
+  async function pickPhoto(root: HTMLElement): Promise<void> {
+    const input = root.querySelectorAll('input[type=file]')[0] as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [new File(['x'], 'minha-foto.jpg', { type: 'image/jpeg' })], configurable: true });
+    input.dispatchEvent(new Event('change'));
+  }
+
+  const cropBox = (root: HTMLElement): HTMLElement => root.querySelector('.crop-box') as HTMLElement;
+
+  it('ao escolher a foto, mostra o passo de ajuste com a área sugerida e a prévia', async () => {
+    const h = await mount(createView);
+    expect(h.root.querySelector('.crop-stage')?.closest('section')?.hidden).toBe(true);
+    await pickPhoto(h.root);
+    await until(() => vi.mocked(imagePrep.suggestCrop).mock.calls.length === 1);
+
+    expect(cropBox(h.root).style.left).toBe('20%');
+    expect(cropBox(h.root).style.top).toBe('25%');
+    expect(cropBox(h.root).style.width).toBe('50%');
+    expect(h.root.textContent).toContain('Área sugerida automaticamente');
+    await until(() => vi.mocked(imagePrep.renderPreview).mock.calls.length >= 1);
+    expect(vi.mocked(imagePrep.renderPreview).mock.calls.at(-1)![1]).toMatchObject({ enhance: 'balanced' });
+  });
+
+  it('compila com o recorte e o contraste escolhidos e guarda a imagem processada como referência', async () => {
+    const h = await mount(createView);
+    await pickPhoto(h.root);
+    await until(() => hasButton(h.root, 'Compilar alvo'));
+    button(h.root, 'Compilar alvo').click();
+    await until(() => h.targets.length === 1);
+
+    const call = vi.mocked(imagePrep.prepareTargetFromSource).mock.calls[0]!;
+    expect(call[1]).toEqual({ crop: { x: 0.2, y: 0.25, w: 0.5, h: 0.4 }, enhance: 'balanced' });
+    const target = h.targets[0]!;
+    expect(target.referenceImage?.blob.type).toBe('image/png');
+    expect(target.note).toBe('Recorte: sim · Contraste: Equilibrado');
+
+    await until(() => hasButton(h.root, 'Salvar projeto'));
+    expect((h.root.querySelector('input.text-input') as HTMLInputElement).value).toMatch(/^Tatuagem \d\d\/\d\d\/\d{4} · Equilibrado$/);
+  });
+
+  it('"Original" + "Usar a foto inteira" compila sem recorte e sem realce', async () => {
+    const h = await mount(createView);
+    await pickPhoto(h.root);
+    await until(() => hasButton(h.root, 'Usar a foto inteira'));
+    button(h.root, 'Usar a foto inteira').click();
+    const original = h.root.querySelector('input[type=radio][value=none]') as HTMLInputElement;
+    original.checked = true;
+    original.dispatchEvent(new Event('change'));
+
+    button(h.root, 'Compilar alvo').click();
+    await until(() => h.targets.length === 1);
+    expect(vi.mocked(imagePrep.prepareTargetFromSource).mock.calls[0]![1]).toEqual({ crop: null, enhance: 'none' });
+    expect(h.targets[0]!.note).toBe('Recorte: foto inteira · Contraste: Original');
+  });
+
+  it('o projeto salvo guarda a imagem processada e leva o modo no nome', async () => {
+    const h = await mount(createView);
+    await pickPhoto(h.root);
+    await until(() => hasButton(h.root, 'Compilar alvo'));
+    const strong = h.root.querySelector('input[type=radio][value=strong]') as HTMLInputElement;
+    strong.checked = true;
+    strong.dispatchEvent(new Event('change'));
+    button(h.root, 'Compilar alvo').click();
+    await until(() => hasButton(h.root, 'Salvar projeto'));
+    button(h.root, 'Salvar projeto').click();
+    await until(() => h.root.textContent?.includes('Salvo neste aparelho'));
+
+    const [entry] = await h.repo.list();
+    expect(entry).toMatchObject({ kind: 'project', health: { status: 'ready' } });
+    if (entry?.kind !== 'project') throw new Error('esperava projeto');
+    expect(entry.record.name).toMatch(/· Forte$/);
+    expect(entry.record.referenceImage).toMatchObject({ mimeType: 'image/png', width: 640, height: 480 });
+  });
+
+  it('sem sugestão possível: avisa e usa a foto inteira', async () => {
+    vi.mocked(imagePrep.suggestCrop).mockReturnValueOnce(null);
+    const h = await mount(createView);
+    await pickPhoto(h.root);
+    await until(() => h.root.textContent?.includes('Não consegui sugerir uma área'));
+    expect(cropBox(h.root).style.width).toBe('100%');
+  });
+
+  it('o botão "Sugerir área" refaz a sugestão depois de ajustes manuais', async () => {
+    const h = await mount(createView);
+    await pickPhoto(h.root);
+    await until(() => hasButton(h.root, 'Usar a foto inteira'));
+    button(h.root, 'Usar a foto inteira').click();
+    expect(cropBox(h.root).style.width).toBe('100%');
+    button(h.root, 'Sugerir área da tatuagem').click();
+    expect(cropBox(h.root).style.width).toBe('50%');
+  });
+
+  it('foto ilegível: mostra o erro no indicador e não abre o passo de ajuste', async () => {
+    vi.mocked(imagePrep.loadSourceImage).mockRejectedValueOnce(new Error('Não foi possível ler essa imagem.'));
+    const h = await mount(createView);
+    await pickPhoto(h.root);
+    await until(() => h.context.store.getState().status === 'error');
+    expect(h.context.store.getState().message).toContain('Não foi possível ler');
+    expect(h.root.querySelector('.crop-stage')?.closest('section')?.hidden).toBe(true);
+  });
+
+  it('falha na compilação: erro no indicador e nenhum alvo é criado', async () => {
+    vi.mocked(compileTarget).mockRejectedValueOnce(new Error('memória insuficiente'));
+    const h = await mount(createView);
+    await pickPhoto(h.root);
+    await until(() => hasButton(h.root, 'Compilar alvo'));
+    button(h.root, 'Compilar alvo').click();
+    await until(() => h.context.store.getState().status === 'error');
+    expect(h.targets).toEqual([]);
+    expect(hasButton(h.root, 'Salvar projeto')).toBe(false);
+  });
+});
+
+describe('Editor de recorte (arrastar)', () => {
+  function setup(): { editor: ReturnType<typeof createCropEditor>; stage: HTMLElement; changes: unknown[] } {
+    const changes: unknown[] = [];
+    const editor = createCropEditor((rect) => changes.push(rect));
+    document.body.appendChild(editor.element);
+    editor.element.getBoundingClientRect = () => ({ width: 200, height: 100, left: 0, top: 0, right: 200, bottom: 100, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    return { editor, stage: editor.element, changes };
+  }
+
+  const pointer = (type: string, x: number, y: number, target: Element): void => {
+    target.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, pointerId: 1 }));
+  };
+
+  it('arrastar a caixa move o recorte em coordenadas normalizadas', () => {
+    const { editor, stage, changes } = setup();
+    editor.setRect({ x: 0.2, y: 0.2, w: 0.4, h: 0.4 });
+    const box = stage.querySelector('.crop-box')!;
+    pointer('pointerdown', 100, 50, box);
+    pointer('pointermove', 120, 60, stage); // +20px de 200 = +0,1; +10px de 100 = +0,1
+    pointer('pointerup', 120, 60, stage);
+    const rect = editor.getRect();
+    expect(rect.x).toBeCloseTo(0.3, 10);
+    expect(rect.y).toBeCloseTo(0.3, 10);
+    expect(rect.w).toBeCloseTo(0.4, 10);
+    expect(changes).toHaveLength(1);
+  });
+
+  it('arrastar um canto redimensiona e nunca passa da borda da foto', () => {
+    const { editor, stage } = setup();
+    editor.setRect({ x: 0.5, y: 0.5, w: 0.3, h: 0.3 });
+    const corner = stage.querySelector('.crop-handle-se')!;
+    pointer('pointerdown', 160, 80, corner);
+    pointer('pointermove', 900, 900, stage);
+    pointer('pointerup', 900, 900, stage);
+    const rect = editor.getRect();
+    expect(rect.x + rect.w).toBeCloseTo(1, 10);
+    expect(rect.y + rect.h).toBeCloseTo(1, 10);
+    expect(rect.x).toBe(0.5);
+  });
+
+  it('movimento sem ter começado um arrasto não faz nada; setRect não dispara onChange', () => {
+    const { editor, stage, changes } = setup();
+    pointer('pointermove', 50, 50, stage);
+    editor.setRect({ x: 0.1, y: 0.1, w: 0.5, h: 0.5 });
+    expect(changes).toEqual([]);
+    expect(editor.getRect()).toEqual({ x: 0.1, y: 0.1, w: 0.5, h: 0.5 });
+  });
+
+  it('setImage ajusta o quadro à proporção da foto (sem barras)', () => {
+    const { editor, stage } = setup();
+    editor.setImage('blob:x', 1000, 500);
+    expect(stage.style.aspectRatio).toContain('1000');
+    expect(stage.style.maxWidth).toContain('2');
   });
 });

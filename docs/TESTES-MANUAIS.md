@@ -121,6 +121,41 @@ tatuagem real).
 Anote também: no Android, se o ZIP baixado abre no gerenciador de arquivos e se
 o seletor de arquivos da importação enxerga a pasta de downloads.
 
+## Parte 8: Comparar recorte e contraste (A/B)
+
+Objetivo: descobrir **se** recortar e realçar ajudam na SUA tatuagem. O app não
+mede isso sozinho; esta parte é a medição. Mantenha tudo igual entre as
+versões: mesma foto, mesma luz, mesma distância, mesmo aparelho.
+
+1. Tire **uma** foto da tatuagem (Parte 2). Em "Criar âncora" ela fica na tela
+   de ajuste e dá para compilar várias vezes a partir dela.
+2. Crie e **salve** estas versões, uma por vez (o nome do projeto já indica o
+   contraste; acrescente "inteira" ou "recorte" no nome):
+
+   | Versão | Recorte | Contraste |
+   |---|---|---|
+   | V1 | foto inteira ("Usar a foto inteira") | Original |
+   | V2 | só a tatuagem | Original |
+   | V3 | só a tatuagem | Equilibrado |
+   | V4 | só a tatuagem | Forte |
+
+3. Para cada versão (abrindo por "Meus projetos"), faça o mesmo roteiro e anote:
+
+   | Medida | Como medir | V1 | V2 | V3 | V4 |
+   |---|---|---|---|---|---|
+   | Tempo até reconhecer | Aponte de uma distância fixa; cronometre 5 vezes e anote a média | | | | |
+   | Perdas em 30 s | Mova o celular devagar em círculo por 30 s; leia "Perdas" na tela | | | | |
+   | Distância mínima/máxima | Afaste e aproxime até perder; anote em cm | | | | |
+   | Ângulo máximo | Incline o celular até perder; anote os graus aproximados | | | | |
+   | Tremor (sub. 1–5) | Quanto o objeto de teste treme com o celular parado | | | | |
+   | Com pouca luz | Repita o tempo de reconhecimento com a luz do ambiente reduzida | | | | |
+
+4. Anote o que **não** melhorou. Se V3/V4 forem piores que V2, o realce não
+   ajuda nessa tatuagem e deve ficar desligado ("Original").
+
+Observações: cinco repetições ainda é uma amostra pequena; diferenças pequenas
+entre versões podem ser ruído. Só decida por diferenças claras.
+
 ## Critérios propostos para considerar o rastreamento validado
 
 **Proposta para sua aprovação, não uma regra estabelecida.** O rastreamento só

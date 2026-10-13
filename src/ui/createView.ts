@@ -1,10 +1,51 @@
 import { NAME_MAX_LENGTH } from '../storage/model';
 import { createProject } from '../storage/projects';
-import { prepareTargetImage, type PreparedTarget } from '../tracking/imagePrep';
+import { isFullRect, type NormalizedRect } from '../tracking/cropGeometry';
+import {
+  loadSourceImage,
+  prepareTargetFromSource,
+  renderPreview,
+  suggestCrop,
+  type PreparedTarget,
+  type SourceImage,
+} from '../tracking/imagePrep';
 import { compileTarget, inspectTargetBuffer } from '../tracking/targetCompiler';
+import type { EnhanceMode } from '../tracking/targetPixels';
 import { statusChip, topBar } from './components';
 import type { AppTarget, View } from './context';
+import { createCropEditor } from './cropEditor';
 import { describeError, downloadBytes, formatBytes, formatDate, formatSeconds, h } from './dom';
+
+interface ModeInfo {
+  value: EnhanceMode;
+  name: string;
+  hint: string;
+}
+
+/**
+ * Modos de contraste. São HIPÓTESES fundamentadas no código do MindAR (ver
+ * src/tracking/targetPixels.ts), ainda não medidas em tatuagens reais: por isso
+ * "Original" continua disponível para comparar.
+ */
+const MODES: ModeInfo[] = [
+  {
+    value: 'none',
+    name: 'Original',
+    hint: 'Usa a foto como está. Serve de comparação.',
+  },
+  {
+    value: 'balanced',
+    name: 'Equilibrado (sugerido)',
+    hint: 'Converte para cinza do mesmo jeito que a câmera do app e estica o contraste. Não troca a ordem dos tons.',
+  },
+  {
+    value: 'strong',
+    name: 'Forte (experimental)',
+    hint: 'Além disso, realça o contraste local para traços finos. Pode realçar também textura da pele e ruído.',
+  },
+];
+
+const modeName = (mode: EnhanceMode): string => MODES.find((m) => m.value === mode)?.name.split(' (')[0] ?? mode;
 
 export const createView: View = (context, root) => {
   const { store } = context;
@@ -12,6 +53,10 @@ export const createView: View = (context, root) => {
   let busy = false;
   let disposed = false;
   let saving = false;
+  let source: SourceImage | null = null;
+  let sourceName = '';
+  let mode: EnhanceMode = 'balanced';
+  let frame: number | null = null;
 
   const nameInput = h('input', {
     class: 'text-input',
@@ -32,7 +77,7 @@ export const createView: View = (context, root) => {
   });
   progress.hidden = true;
 
-  const preview = h('img', { class: 'preview', alt: 'Tatuagem escolhida como alvo' });
+  const preview = h('img', { class: 'preview', alt: 'Imagem usada como alvo' });
   preview.hidden = true;
 
   const result = h('section', { class: 'card result' });
@@ -64,45 +109,179 @@ export const createView: View = (context, root) => {
     'Carregar alvo salvo (.mind)',
   );
 
+  // ---------- ajuste de recorte e contraste ----------
+  const cropEditor = createCropEditor(() => {
+    cropNote.hidden = true;
+    schedulePreview();
+  });
+  const cropNote = h('p', { class: 'muted' });
+  cropNote.hidden = true;
+  const suggestButton = h(
+    'button',
+    { class: 'btn', type: 'button', onclick: () => applySuggestion(true) },
+    'Sugerir área da tatuagem',
+  );
+  const fullButton = h(
+    'button',
+    {
+      class: 'btn btn-ghost',
+      type: 'button',
+      onclick: () => {
+        cropEditor.setRect(null);
+        cropNote.hidden = true;
+        schedulePreview();
+      },
+    },
+    'Usar a foto inteira',
+  );
+  const enhancePreview = h('div', { class: 'stack' });
+  const compileButton = h(
+    'button',
+    { class: 'btn btn-primary', type: 'button', onclick: () => void handleCompile() },
+    'Compilar alvo',
+  );
+
+  const modeList = h(
+    'fieldset',
+    { class: 'mode-list' },
+    h('legend', { class: 'field-label' }, 'Contraste interno (a tatuagem aparece em cinza para o rastreador)'),
+    ...MODES.map((info) => {
+      const input = h('input', {
+        type: 'radio',
+        name: 'enhance-mode',
+        value: info.value,
+        checked: info.value === mode,
+        onchange: () => {
+          mode = info.value;
+          schedulePreview();
+        },
+      });
+      return h(
+        'label',
+        { class: 'mode-option' },
+        input,
+        h('span', null, h('strong', null, info.name), h('span', { class: 'muted block' }, info.hint)),
+      );
+    }),
+  );
+
+  const adjust = h(
+    'section',
+    { class: 'card' },
+    h('h2', { class: 'card-title' }, '2. Área da tatuagem e contraste'),
+    h(
+      'p',
+      { class: 'muted' },
+      'Arraste o retângulo para ficar só em volta da tatuagem. Quanto menos pele e fundo dentro dele, mais o app aproveita a imagem para reconhecer a tatuagem. O rastreador usa a imagem em tons de cinza.',
+    ),
+    cropEditor.element,
+    cropNote,
+    h('div', { class: 'row' }, suggestButton, fullButton),
+    modeList,
+    h('p', { class: 'muted' }, 'É assim que o app vai enxergar a imagem:'),
+    enhancePreview,
+    h('div', { class: 'row' }, compileButton),
+    progress,
+  );
+  adjust.hidden = true;
+
   function setBusy(value: boolean): void {
     busy = value;
-    for (const button of [galleryButton, photoButton, loadMindButton]) {
+    for (const button of [galleryButton, photoButton, loadMindButton, compileButton, suggestButton, fullButton]) {
       button.disabled = value;
     }
   }
 
-  async function handleImage(file: File): Promise<void> {
+  const currentCrop = (): NormalizedRect | null => {
+    const rect = cropEditor.getRect();
+    return isFullRect(rect) ? null : rect;
+  };
+
+  function schedulePreview(): void {
+    if (frame !== null || !source) return;
+    frame = window.requestAnimationFrame(() => {
+      frame = null;
+      if (disposed || !source) return;
+      try {
+        const canvas = renderPreview(source, { crop: currentCrop(), enhance: mode });
+        canvas.className = 'enhance-preview';
+        canvas.setAttribute('role', 'img');
+        canvas.setAttribute('aria-label', 'Prévia da imagem como o rastreador a enxerga');
+        enhancePreview.replaceChildren(canvas);
+      } catch (error) {
+        enhancePreview.replaceChildren(h('p', { class: 'form-error' }, describeError(error)));
+      }
+    });
+  }
+
+  function applySuggestion(explicit: boolean): void {
+    if (!source) return;
+    let suggestion: NormalizedRect | null = null;
+    try {
+      suggestion = suggestCrop(source);
+    } catch {
+      suggestion = null;
+    }
+    cropEditor.setRect(suggestion);
+    cropNote.hidden = false;
+    cropNote.textContent = suggestion
+      ? 'Área sugerida automaticamente (procura tinta mais escura que a pele). Confira e ajuste se precisar.'
+      : explicit
+        ? 'Não consegui identificar uma área clara. Arraste o retângulo para marcar a tatuagem.'
+        : 'Não consegui sugerir uma área; está usando a foto inteira. Arraste o retângulo para marcar a tatuagem.';
+    schedulePreview();
+  }
+
+  async function handlePhoto(file: File): Promise<void> {
     if (busy) return;
+    setBusy(true);
+    try {
+      const next = await loadSourceImage(file);
+      source?.dispose();
+      source = next;
+      sourceName = file.name || 'foto';
+      cropEditor.setImage(next.objectUrl, next.width, next.height);
+      adjust.hidden = false;
+      applySuggestion(false);
+    } catch (error) {
+      // PREPARE_FAILED só vale durante o preparo; ler a foto é "carregar".
+      store.dispatch({ type: 'TARGET_LOAD_FAILED', message: describeError(error) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCompile(): Promise<void> {
+    if (busy || !source) return;
+    const chosenMode = mode;
+    const crop = currentCrop();
     setBusy(true);
     store.dispatch({ type: 'PREPARE_START' });
     let prepared: PreparedTarget | null = null;
     try {
-      prepared = await prepareTargetImage(file);
-      preview.src = prepared.objectUrl;
-      preview.hidden = false;
-
+      prepared = await prepareTargetFromSource(source, { crop, enhance: chosenMode });
       const compiled = await compileTarget(prepared.image, (percent) =>
         store.dispatch({ type: 'PREPARE_PROGRESS', percent }),
       );
-
       context.setTarget({
         buffer: compiled.buffer,
         width: compiled.width,
         height: compiled.height,
         origin: 'compiled',
-        label: file.name || 'foto',
+        label: sourceName,
         previewUrl: prepared.objectUrl,
         compileMs: compiled.compileMs,
         projectId: null,
+        // Guardamos a imagem EXATA que foi compilada (recortada e realçada):
+        // recompilar depois reproduz o mesmo alvo.
         referenceImage: { blob: prepared.blob, width: prepared.width, height: prepared.height },
+        note: `Recorte: ${crop ? 'sim' : 'foto inteira'} · Contraste: ${modeName(chosenMode)}`,
       });
-      nameInput.value = defaultProjectName();
+      nameInput.value = defaultProjectName(undefined, modeName(chosenMode));
       saveError.hidden = true;
       store.dispatch({ type: 'PREPARE_DONE' });
     } catch (error) {
       prepared?.dispose();
-      preview.hidden = true;
-      preview.removeAttribute('src');
       store.dispatch({ type: 'PREPARE_FAILED', message: describeError(error) });
     } finally {
       setBusy(false);
@@ -116,8 +295,6 @@ export const createView: View = (context, root) => {
     try {
       const buffer = new Uint8Array(await file.arrayBuffer());
       const info = inspectTargetBuffer(buffer);
-      preview.hidden = true;
-      preview.removeAttribute('src');
       context.setTarget({
         buffer,
         width: info.width,
@@ -128,6 +305,7 @@ export const createView: View = (context, root) => {
         compileMs: null,
         projectId: null,
         referenceImage: null,
+        note: null,
       });
       nameInput.value = defaultProjectName(file.name);
       saveError.hidden = true;
@@ -140,8 +318,8 @@ export const createView: View = (context, root) => {
     }
   }
 
-  galleryInput.addEventListener('change', () => takeFile(galleryInput, handleImage));
-  cameraInput.addEventListener('change', () => takeFile(cameraInput, handleImage));
+  galleryInput.addEventListener('change', () => takeFile(galleryInput, handlePhoto));
+  cameraInput.addEventListener('change', () => takeFile(cameraInput, handlePhoto));
   mindInput.addEventListener('change', () => takeFile(mindInput, handleMind));
 
   function renderResult(): void {
@@ -152,9 +330,12 @@ export const createView: View = (context, root) => {
       return;
     }
     result.hidden = false;
-    if (target.previewUrl && preview.hidden) {
+    if (target.previewUrl) {
       preview.src = target.previewUrl;
       preview.hidden = false;
+    } else {
+      preview.removeAttribute('src');
+      preview.hidden = true;
     }
     const details = [
       `${target.width}×${target.height} px`,
@@ -167,7 +348,9 @@ export const createView: View = (context, root) => {
     ];
     result.append(
       h('h2', { class: 'card-title' }, 'Alvo pronto'),
+      preview,
       h('p', { class: 'muted' }, details.join(' · ')),
+      ...(target.note ? [h('p', { class: 'muted' }, target.note)] : []),
       ...saveSection(target),
       h(
         'div',
@@ -183,6 +366,15 @@ export const createView: View = (context, root) => {
           'Baixar alvo (.mind)',
         ),
       ),
+      ...(source
+        ? [
+            h(
+              'p',
+              { class: 'muted' },
+              'Quer comparar? Salve este, volte ao passo 2, mude o recorte ou o contraste e compile de novo: cada versão vira um projeto com o nome do contraste usado.',
+            ),
+          ]
+        : []),
     );
   }
 
@@ -204,7 +396,7 @@ export const createView: View = (context, root) => {
     const note =
       target.referenceImage === null
         ? 'Este alvo veio de um arquivo .mind, sem a foto original: dá para salvá-lo e usá-lo, mas não para recompilar depois.'
-        : 'Ainda não salvo: ele existe só enquanto este app estiver aberto. Salve para reabrir depois sem recompilar. A foto fica guardada só neste aparelho.';
+        : 'Ainda não salvo: ele existe só enquanto este app estiver aberto. Salve para reabrir depois sem recompilar. A imagem usada fica guardada só neste aparelho.';
     const saveButton = h(
       'button',
       { class: 'btn btn-primary', type: 'button', onclick: () => void saveProject(target, saveButton) },
@@ -276,12 +468,11 @@ export const createView: View = (context, root) => {
         h(
           'p',
           { class: 'muted' },
-          'Use uma foto nítida, com boa luz e a tatuagem preenchendo o quadro. Sem reflexo e sem sombra forte. O app reduz a imagem e compila o alvo aqui mesmo, sem enviar nada para a internet.',
+          'Use uma foto nítida, com boa luz e a tatuagem preenchendo o quadro. Sem reflexo e sem sombra forte. O app recorta, ajusta o contraste e compila o alvo aqui mesmo, sem enviar nada para a internet.',
         ),
         h('div', { class: 'row' }, galleryButton, photoButton),
-        progress,
-        preview,
       ),
+      adjust,
       result,
       h(
         'section',
@@ -299,6 +490,10 @@ export const createView: View = (context, root) => {
 
   return () => {
     disposed = true;
+    if (frame !== null) window.cancelAnimationFrame(frame);
+    cropEditor.destroy();
+    source?.dispose();
+    source = null;
     unsubscribe();
     chip.destroy();
   };
@@ -311,9 +506,10 @@ function takeFile(input: HTMLInputElement, handler: (file: File) => Promise<void
   if (file) void handler(file);
 }
 
-function defaultProjectName(fileName?: string): string {
-  const base = fileName?.replace(/\.[^.]+$/, '').trim();
-  return base ? base.slice(0, NAME_MAX_LENGTH) : `Tatuagem ${formatDate(new Date())}`;
+function defaultProjectName(fileName?: string, suffix?: string): string {
+  const base = fileName?.replace(/\.[^.]+$/, '').trim() || `Tatuagem ${formatDate(new Date())}`;
+  const name = suffix ? `${base} · ${suffix}` : base;
+  return name.slice(0, NAME_MAX_LENGTH);
 }
 
 function downloadTarget(target: AppTarget): void {
