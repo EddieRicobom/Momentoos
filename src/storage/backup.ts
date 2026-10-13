@@ -1,10 +1,14 @@
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { readMindHeader } from '../tracking/mindFormat';
 import { isSha256Hex, newId, sha256Hex } from './hash';
+import { ITEM_PATH_EXTENSIONS, itemExtension, matchesSignature } from './itemFiles';
 import {
   assessProject,
   isIsoDate,
   isValidId,
+  itemFileKind,
+  MAX_ITEMS_PER_PROJECT,
+  MAX_ITEM_FILE_BYTES,
   normalizeName,
   parseProjectRecord,
   type FileKind,
@@ -20,6 +24,7 @@ import type { FileWrites, ProjectRepository } from './repository';
  *   projects/<id>/project.json
  *   projects/<id>/anchor.mind
  *   projects/<id>/reference-image.(png|jpg|webp|bin)
+ *   projects/<id>/items/<itemId>.<ext>        (formato 2: itens da cena)
  *
  * A importação trata o arquivo como entrada NÃO confiável: só lê os caminhos
  * que o manifesto declara e que seguem o padrão acima, limita tamanhos e
@@ -27,7 +32,8 @@ import type { FileWrites, ProjectRepository } from './repository';
  */
 
 export const BACKUP_FORMAT = 'tattoo-ar-backup';
-export const BACKUP_FORMAT_VERSION = 1;
+/** 1: alvo + foto. 2: acrescenta os itens da cena (o importador aceita 1 e 2). */
+export const BACKUP_FORMAT_VERSION = 2;
 export const BACKUP_EXTENSION = '.tattoo-ar.zip';
 export const MANIFEST_PATH = 'manifest.json';
 
@@ -76,6 +82,11 @@ export interface BackupFileEntry {
   sha256: string;
 }
 
+export interface BackupItemEntry {
+  id: string;
+  file: BackupFileEntry;
+}
+
 export interface BackupProjectEntry {
   id: string;
   /** Só para leitura humana do manifesto; o nome de verdade está em project.json. */
@@ -84,6 +95,8 @@ export interface BackupProjectEntry {
   project: BackupFileEntry;
   anchor?: BackupFileEntry;
   referenceImage?: BackupFileEntry;
+  /** Arquivos dos itens da cena (formato 2). */
+  items?: BackupItemEntry[];
 }
 
 export interface BackupManifest {
@@ -113,6 +126,14 @@ function imageExtension(mimeType: string): (typeof IMAGE_EXTENSIONS)[number] {
     default:
       return 'bin';
   }
+}
+
+const itemPath = (id: string, itemId: string, mimeType: string): string =>
+  `${dirOf(id)}/items/${itemId}.${itemExtension(mimeType)}`;
+
+function isItemPathFor(id: string, itemId: string, path: string): boolean {
+  const prefix = `${dirOf(id)}/items/${itemId}.`;
+  return path.startsWith(prefix) && ITEM_PATH_EXTENSIONS.includes(path.slice(prefix.length));
 }
 
 const imagePath = (id: string, mimeType: string): string =>
@@ -216,6 +237,31 @@ export async function exportBackup(
       continue;
     }
 
+    // Itens da cena: só saem os que têm arquivo íntegro; os demais são removidos
+    // da cena exportada (com aviso) para não deixar item sem arquivo no backup.
+    const keptItems: Array<{ id: string; mimeType: string; bytes: Uint8Array; path: string }> = [];
+    const outItems = [];
+    for (const sceneItem of record.scene.items) {
+      const file = await repo.getFile(id, itemFileKind(sceneItem.id));
+      if (!file) {
+        warnings.push(`"${record.name}": o arquivo do item "${sceneItem.name}" está ausente e o item ficou fora do backup.`);
+      } else if (
+        file.data.byteLength !== sceneItem.file.size ||
+        (await sha256Hex(file.data)) !== sceneItem.file.sha256
+      ) {
+        warnings.push(`"${record.name}": o arquivo do item "${sceneItem.name}" está corrompido e o item ficou fora do backup.`);
+      } else {
+        outItems.push(sceneItem);
+        keptItems.push({
+          id: sceneItem.id,
+          mimeType: sceneItem.file.mimeType,
+          bytes: new Uint8Array(file.data),
+          path: itemPath(id, sceneItem.id, sceneItem.file.mimeType),
+        });
+      }
+    }
+    outRecord.scene = { items: outItems };
+
     const projectBytes = strToU8(JSON.stringify(outRecord, null, 2));
     const item: BackupProjectEntry = {
       id,
@@ -241,6 +287,17 @@ export async function exportBackup(
       };
       // PNG/JPEG/WebP já são comprimidos: guardar sem recomprimir.
       zippable[kept.referenceImage.path] = [kept.referenceImage.bytes, { level: 0, mtime: now }];
+    }
+
+    if (keptItems.length > 0) {
+      item.items = [];
+      for (const kept of keptItems) {
+        const info = outItems.find((candidate) => candidate.id === kept.id)!.file;
+        item.items.push({ id: kept.id, file: { path: kept.path, size: info.size, sha256: info.sha256 } });
+        // Mídia já é comprimida; só o GLB se beneficia de deflate.
+        const level = kept.mimeType === 'model/gltf-binary' ? 6 : 0;
+        zippable[kept.path] = [kept.bytes, { level, mtime: now }];
+      }
     }
 
     manifestProjects.push(item);
@@ -330,6 +387,7 @@ export async function importBackup(
     declared.set(project.project.path, project.project);
     if (project.anchor) declared.set(project.anchor.path, project.anchor);
     if (project.referenceImage) declared.set(project.referenceImage.path, project.referenceImage);
+    for (const entry of project.items ?? []) declared.set(entry.file.path, entry.file);
   }
 
   let total = 0;
@@ -444,6 +502,37 @@ async function importProject(
     return skip('Nenhum arquivo íntegro no backup: não há como abrir nem recompilar.');
   }
 
+  // itens da cena: só entram os que conferem em tamanho, hash e formato
+  const keptItems = [];
+  for (const sceneItem of record.scene.items) {
+    const declaredEntry = item.items?.find((entry) => entry.id === sceneItem.id)?.file;
+    const bytes = declaredEntry ? files[declaredEntry.path] : undefined;
+
+    let problem: string | null = null;
+    if (!declaredEntry || !bytes) problem = 'ausente no backup';
+    else if (
+      bytes.byteLength !== sceneItem.file.size ||
+      declaredEntry.size !== sceneItem.file.size ||
+      declaredEntry.sha256 !== sceneItem.file.sha256 ||
+      (await sha256Hex(bytes)) !== sceneItem.file.sha256
+    ) {
+      problem = 'corrompido (hash ou tamanho não conferem)';
+    } else if (!matchesSignature(sceneItem.file.mimeType, bytes)) {
+      problem = 'com conteúdo diferente do formato declarado';
+    }
+
+    if (problem !== null || !bytes) {
+      report.warnings.push(`"${name}": o arquivo do item "${sceneItem.name}" ${problem ?? 'ausente'}; o item foi ignorado.`);
+      continue;
+    }
+    keptItems.push(sceneItem);
+    payloads[itemFileKind(sceneItem.id)] = {
+      mimeType: sceneItem.file.mimeType,
+      data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+    };
+  }
+  record.scene = { items: keptItems };
+
   // colisão de id
   const existing = await repo.getEntry(record.id);
   let renamed = false;
@@ -527,6 +616,26 @@ function parseManifest(bytes: Uint8Array, limits: BackupLimits): BackupManifest 
       item.referenceImage = fileEntry(value.referenceImage, where, limits.maxFileBytes, (p) =>
         isImagePathFor(id, p),
       );
+    }
+    if (value.items !== undefined) {
+      if (!Array.isArray(value.items) || value.items.length > MAX_ITEMS_PER_PROJECT) {
+        throw new BackupError('invalid-manifest', `${where}: lista de itens inválida.`);
+      }
+      const itemIds = new Set<string>();
+      item.items = value.items.map((entry: unknown): BackupItemEntry => {
+        if (!isObject(entry) || !isValidId(entry.id)) {
+          throw new BackupError('invalid-manifest', `${where}: item mal descrito.`);
+        }
+        const itemId = entry.id;
+        if (itemIds.has(itemId)) throw new BackupError('invalid-manifest', `${where}: item repetido.`);
+        itemIds.add(itemId);
+        return {
+          id: itemId,
+          file: fileEntry(entry.file, where, Math.min(limits.maxFileBytes, MAX_ITEM_FILE_BYTES), (p) =>
+            isItemPathFor(id, itemId, p),
+          ),
+        };
+      });
     }
     return item;
   });
