@@ -1,4 +1,4 @@
-# Roteiro de testes manuais (Etapas B e C)
+# Roteiro de testes manuais (Etapas B, C e D)
 
 Estes testes precisam de um celular e de uma tatuagem real. Nenhum deles foi
 executado ainda. Preencha a coluna **Resultado** conforme for testando: o que
@@ -156,6 +156,34 @@ versões: mesma foto, mesma luz, mesma distância, mesmo aparelho.
 Observações: cinco repetições ainda é uma amostra pequena; diferenças pequenas
 entre versões podem ser ruído. Só decida por diferenças claras.
 
+## Parte 9: Cena 3D com vários itens (Etapa D)
+
+Pré-requisito: um projeto salvo que já passou nas Partes 2 e 3 (reconhece a
+tatuagem). Esta parte valida a **cena e o editor**, não o rastreamento. Tenha à
+mão: um PNG com fundo transparente, uma foto JPG, um GIF animado, um MP4 com
+som, um WebM, um GLB com animação (e, se possível, um sem animação), um MP3.
+Use só arquivos que você tenha direito de usar.
+
+| # | O que fazer | Resultado esperado |
+|---|---|---|
+| 9.1 | "Meus projetos" → **Adicionar itens**. Adicione os arquivos acima (vários de uma vez). | Cada arquivo vira um item na lista, com o tipo certo; o último fica selecionado. Anote qualquer arquivo recusado ou que não apareceu na prévia. |
+| 9.2 | Tente adicionar um `.mov`, um `.gltf`, um arquivo renomeado (um PNG chamado `.glb`) e um arquivo maior que 48 MB. | Cada um é recusado com mensagem clara; os demais itens do lote entram normalmente. |
+| 9.3 | Leia o texto sobre YouTube na tela. | Avisa que YouTube/links não são suportados e como usar um vídeo. |
+| 9.4 | Na prévia, toque num item e arraste. Troque entre "De frente" e "Inclinada". | O item acompanha o dedo; a vista inclinada mostra a profundidade; tocar no vazio desmarca. Anote se o arrasto é preciso e se atrapalha a rolagem da página. |
+| 9.5 | Mexa em cada controle (posição, altura, giro, inclinação, tamanho, opacidade, volume, ajuste fino). | O item muda ao vivo; "Alterações não salvas" aparece; "Desfazer alterações" volta ao salvo. |
+| 9.6 | Toque em "Reproduzir mídia". | GIF anima, vídeo toca, GLB anima, áudio toca. "Pausar mídia" para tudo. Anote o que não tocou. |
+| 9.7 | Ajuste algo, toque em **Salvar**, saia do editor e volte. Depois ajuste de novo e saia com o botão voltar do aparelho SEM salvar. | O salvo permanece. O pendente é gravado ao sair (aviso "Ajustes da cena salvos"). |
+| 9.8 | Duplique um item; remova outro (com a confirmação). | A cópia aparece deslocada e funciona independente; o removido some e, em Configurações, o uso de armazenamento diminui. |
+| 9.9 | "Abrir câmera" a partir do projeto e aponte para a tatuagem. | Os itens carregam ("Carregando itens: x/y") e aparecem sobre a tatuagem quando ela é reconhecida. A posição relativa bate com o que você montou na prévia (dentro do recorte). O botão "Moldura de teste" liga/desliga a moldura. |
+| 9.10 | Vídeo, áudio, GIF e animação do GLB: perca a tatuagem (cubra-a) e recupere. | Tocam ao reconhecer, **pausam ao perder** e continuam ao recuperar. Se o navegador bloquear o som, aparece "Tocar áudio e vídeo" e o toque libera. |
+| 9.11 | Um modelo GLB: confira a orientação e o tamanho. | O modelo aparece "em pé" sobre a pele, com o maior lado do tamanho da metade do recorte (escala 1). Anote se está de cabeça para baixo ou girado. |
+| 9.12 | Adicione 10 e depois 30 itens (misture imagens, 2–3 vídeos, 1–2 modelos). Abra a câmera e observe "atualizações/s" e a fluidez. | Anote o ponto em que fica lento, esquenta ou fecha o navegador. |
+| 9.13 | Um GLB com compressão Draco (se tiver). | Item marcado com erro e mensagem explicando; os outros itens continuam. |
+| 9.14 | Exporte um backup do projeto, apague o projeto, importe o backup. | O projeto volta com todos os itens, ajustes e arquivos; abre na câmera igual ao original. |
+| 9.15 | Em um navegador sem WebGL ou sem `ImageDecoder` (se tiver como testar). | Sem WebGL, o editor mostra aviso e segue com os controles. Sem `ImageDecoder`, o GIF fica parado, com aviso. |
+
+Não testado nem previsto: iOS/Safari. Se for o seu caso, anote tudo o que falhar.
+
 ## Critérios propostos para considerar o rastreamento validado
 
 **Proposta para sua aprovação, não uma regra estabelecida.** O rastreamento só
@@ -167,8 +195,8 @@ deve ser dado como validado se, em pelo menos uma tatuagem real:
 4. 4.1 a 4.3 passam (perde, avisa e recupera);
 5. as condições da Parte 5 ficam documentadas, inclusive as que falharam.
 
-A Parte 7 (projetos salvos e backup) é independente: ela valida a
-**persistência**, não o rastreamento. Passar nela não valida o rastreamento, e
+As Partes 7 (projetos salvos e backup) e 9 (cena 3D e editor) são independentes: elas validam a
+**persistência** e a **cena**, não o rastreamento. Passar nelas não valida o rastreamento, e
 vice-versa.
 
 Falhas na Parte 5 (por exemplo, curvatura) não impedem a validação, mas precisam
@@ -183,4 +211,5 @@ constar na documentação como limitação.
 - Tatuagem testada (região do corpo, tamanho aproximado, nível de detalhe):
 - Tempo de compilação (2.2):
 - Tamanho do `.mind`:
+- Itens usados na Parte 9 (tipos, tamanhos):
 - Observações gerais:
