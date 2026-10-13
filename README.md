@@ -14,7 +14,7 @@ tatuagem nunca sai do aparelho.
 | A | Ambiente, estrutura, documentação | Concluída |
 | B | Câmera, compilação do alvo, demo de rastreamento | **Implementada, ainda NÃO validada em celular** |
 | C | Salvar projetos (IndexedDB), recarregar, exportar/importar ZIP | **Implementada, testada só com simulações; ainda NÃO validada em celular** |
-| D | Conteúdos virtuais (imagem, GIF, vídeo, GLB) e editor | Não iniciada |
+| D | Cena 3D ancorada com N itens (imagem, GIF, vídeo, GLB, áudio) e editor | **Implementada, testada só com simulações; nada disso rodou em navegador/celular reais** |
 | E | PWA offline, otimização, publicação | Não iniciada (há um fluxo de publicação manual, ainda não executado) |
 
 **O rastreamento em tatuagens reais NÃO está validado.** O que existe é o código
@@ -56,6 +56,33 @@ Etapa C (persistência):
 
 Tudo da Etapa C foi verificado por testes automatizados com **IndexedDB e DOM
 simulados**. Não foi executado em navegador nem em celular reais: a Parte 7 de
+[docs/TESTES-MANUAIS.md](docs/TESTES-MANUAIS.md) cobre isso.
+
+Etapa D (cena 3D ancorada):
+
+- Cada projeto tem uma **cena com quantos itens quiser** (limite de segurança:
+  100 por projeto, 48 MB por arquivo): imagem (PNG, JPG, WebP), **GIF animado**,
+  **vídeo local** (MP4, WebM), **modelo 3D GLB** com animações e **áudio**
+  (MP3, OGG, WAV, M4A). Cada item tem posição, altura, giro, inclinação,
+  tamanho, deslocamento, opacidade e opções próprias (repetir, mudo, volume,
+  animação do modelo).
+- Editor ("Meus projetos" → "Adicionar itens"): adicionar vários arquivos,
+  duplicar, remover, ocultar, e ajustar cada item numa **prévia 3D sobre a foto de
+  referência** (de frente ou inclinada; tocar seleciona, arrastar posiciona).
+- Na câmera, os itens aparecem ancorados quando a tatuagem é reconhecida;
+  vídeo, áudio, GIF e animações **tocam ao reconhecer e pausam ao perder**.
+  Se o navegador bloquear o autoplay, aparece "Tocar áudio e vídeo".
+- Os arquivos dos itens ficam no IndexedDB e entram no backup ZIP (formato 2;
+  backups do formato 1 continuam importando).
+- **YouTube e links não são suportados**: o player é uma página (iframe) que não
+  pode ser desenhada dentro da cena 3D e exige internet. A tela do editor avisa.
+  Para usar um vídeo, adicione o arquivo MP4/WebM de um vídeo que você tenha
+  direito de usar.
+
+Tudo da Etapa D foi verificado por testes automatizados (montagem da cena com
+carregadores falsos, contas de posicionamento, armazenamento, backup, telas com
+prévia falsa). **Os carregadores reais de mídia, a prévia WebGL e a câmera com
+cena nunca rodaram em navegador ou celular**: a Parte 9 de
 [docs/TESTES-MANUAIS.md](docs/TESTES-MANUAIS.md) cobre isso.
 
 ## Requisitos
@@ -115,8 +142,10 @@ perda e recuperação), a classificação dos erros de câmera, o cálculo de re
 da imagem e o store; e, na Etapa C, o modelo e a validação de projetos, o
 repositório (IndexedDB simulado, incluindo atomicidade e registros corrompidos),
 o backup ZIP (inclusive arquivos adulterados, caminhos maliciosos e limites de
-tamanho) e a lógica das telas (DOM simulado). **Não** cobrem compilação do
-MindAR, câmera nem rastreamento, que dependem de navegador e hardware, nem o
+tamanho) e a lógica das telas (DOM simulado); na Etapa D, o modelo da cena, a
+classificação de arquivos, as operações sobre itens, o backup com itens, o
+posicionamento (contas puras e árvore de nós do Three.js) e a lógica do editor e da tela da câmera. **Não** cobrem compilação do
+MindAR, câmera, rastreamento, decodificação de mídia, WebGL, que dependem de navegador e hardware, nem o
 comportamento real do IndexedDB, do download e do seletor de arquivos do celular. Para isso, siga
 [docs/TESTES-MANUAIS.md](docs/TESTES-MANUAIS.md).
 
@@ -215,6 +244,24 @@ limitações: [docs/RASTREAMENTO.md](docs/RASTREAMENTO.md).
   ouvinte de `resize` na janela (ele não expõe como removê-lo). Efeito pequeno,
   mas existe.
 - Sem modo offline ainda (Etapa E).
+- **Cena 3D (Etapa D):** o MindAR trata a tatuagem como imagem plana, então os
+  itens ficam presos a esse plano; não acompanham a deformação da pele.
+- Os itens se posicionam no sistema de coordenadas do **recorte** da tatuagem
+  (origem no centro, 1 unidade = largura do recorte, +z para fora da pele). Se
+  recompilar com outro recorte, a posição dos itens muda junto: reposicione-os.
+- GIF animado usa `ImageDecoder` (WebCodecs); em navegador sem ele, o GIF
+  aparece parado no primeiro quadro, com aviso.
+- GLB: sem compressão Draco, Meshopt ou texturas KTX2 (mensagem explica);
+  só `.glb` (um arquivo), não `.gltf` com arquivos soltos.
+- Vídeo com som e áudio podem exigir um toque (regra de autoplay do navegador,
+  mais rígida no iOS, que não foi considerado nos testes).
+- Transparência (PNG, WebP, GIF) é desenhada pelo código, mas **não foi testada**; vídeo não tem canal alfa.
+- Muitos itens pesados ao mesmo tempo (vídeos, modelos grandes) podem travar
+  celulares modestos; os limites de 100 itens e 48 MB são salvaguardas, não
+  valores medidos em aparelho.
+- Ajustes do editor sem Salvar são gravados ao sair da tela (inclusive pelo
+  botão voltar do aparelho); não há "descartar ao sair", só "Desfazer
+  alterações" antes.
 - Armazenamento no navegador não é garantia de guarda: o navegador pode apagar
   dados do site em situações de pouco espaço, e "armazenamento persistente" é
   só um pedido que ele pode negar. O backup em ZIP é a proteção real.
@@ -233,8 +280,17 @@ src/
     repository.ts         IndexedDB (projetos + arquivos, transações)
     projects.ts           criar, abrir (com verificação), recompilar, renomear
     backup.ts             exportar/importar ZIP (entrada não confiável)
+    scene.ts              adicionar/editar/remover/duplicar itens da cena
+    itemFiles.ts          tipo por extensão + assinatura dos bytes
     storageInfo.ts        uso/cota e armazenamento persistente
     errors.ts, hash.ts    erros tipados, SHA-256 e ids
+  scene/                  Etapa D: cena 3D ancorada
+    placement.ts          escala base, ajuste de GLB, quadro de GIF (puro)
+    runtime.ts            monta a cena, toca/pausa ao reconhecer/perder
+    loaders.ts            imagem, GIF, vídeo, GLB e áudio (precisam de navegador)
+    editorModel.ts        controles, limites e alterações do editor (puro)
+    picking.ts            raio × plano e câmera da prévia (puro)
+    summaryText.ts        textos de andamento e erros
   tracking/
     mindFormat.ts         leitura do cabeçalho do .mind
     state.ts              máquina de estados (pura, testada)
@@ -246,7 +302,7 @@ src/
     targetCompiler.ts     compilação e validação do .mind
     arSession.ts          sessão MindARThree (câmera + rastreio)
     virtualObject.ts      objeto de teste ancorado
-  ui/                     telas e componentes
+  ui/                     telas e componentes (editorView.ts, previewStage.ts: editor e prévia 3D)
   types/mind-ar.d.ts      tipos escritos à mão para o MindAR
 tests/                    testes automatizados
 docs/                     rastreamento, formato de backup e roteiro de testes manuais

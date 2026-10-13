@@ -166,3 +166,30 @@ a foto de novo.
 - Pré-processamento do **quadro da câmera**: o MindAR lê o vídeo direto, e
   filtrá-lo antes custaria desempenho no celular.
 
+## Posicionando conteúdo virtual (Etapa D)
+
+Os itens da cena são filhos do grupo da âncora do MindARThree (conferido em
+`src/image-target/three.js` do mind-ar 1.2.5):
+
+- **Origem no centro do alvo**; **1 unidade = largura do alvo**; +x para a
+  direita, +y para cima na imagem, **+z para fora da pele**.
+- O "alvo" é o **recorte** (já com o contraste aplicado) que foi compilado, e é
+  exatamente a foto de referência guardada no projeto. A prévia do editor
+  desenha essa foto num plano de 1 × (altura/largura) e coloca os itens por
+  cima, com o mesmo sistema de coordenadas.
+- Cada item é uma cadeia de nós: posição → giro (graus, ordem X, Y, Z) →
+  deslocamento no eixo do próprio item → escala uniforme → conteúdo.
+- Tamanho com escala 1: imagem, GIF e vídeo têm **metade da largura do alvo**
+  (proporção do arquivo mantida); um modelo GLB tem o **maior lado** igual a essa
+  largura, centralizado e com a base na pele. O glTF usa Y para cima; o app gira
+  o modelo 90° em X para que o "alto" dele aponte para fora da pele.
+- A pose (e a suavização) vem do MindAR. A cena **não** tem noção de pele
+  curva: tudo é preso ao plano do alvo. Itens longe do centro ou muito altos
+  sobre a pele podem "escorregar" mais quando a pose treme (efeito de
+  alavanca, hipótese não medida).
+- Ao reconhecer (`onTargetFound`) o app toca vídeo, áudio, GIF e animação do
+  modelo; ao perder (`onTargetLost`) pausa. O MindAR esconde o grupo da âncora
+  sozinho depois de alguns quadros perdidos; o app não controla essa tolerância.
+- **Recompilar com outro recorte muda o sistema de coordenadas** e, com ele, a
+  posição dos itens sobre a tatuagem.
+
