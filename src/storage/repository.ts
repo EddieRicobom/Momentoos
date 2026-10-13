@@ -1,12 +1,13 @@
 import { StorageError, toStorageError } from './errors';
 import {
   assessProject,
+  isFileKind,
+  itemFileKind,
   parseProjectRecord,
-  type ContentConfig,
   type FileKind,
   type ProjectHealth,
   type ProjectRecord,
-  FILE_KINDS,
+  type Scene,
 } from './model';
 
 const DB_NAME = 'tattoo-ar';
@@ -27,7 +28,13 @@ export interface FilePayload {
 export type FileWrites = Partial<Record<FileKind, FilePayload | null>>;
 
 export type ListEntry =
-  | { kind: 'project'; record: ProjectRecord; health: ProjectHealth }
+  | {
+      kind: 'project';
+      record: ProjectRecord;
+      health: ProjectHealth;
+      /** Ids de itens da cena cujo arquivo não está no banco (o item é ignorado ao exibir). */
+      missingItems: string[];
+    }
   | {
       kind: 'unreadable';
       id: string;
@@ -38,7 +45,7 @@ export type ListEntry =
 
 export interface MetaPatch {
   name?: string;
-  content?: ContentConfig;
+  scene?: Scene;
   updatedAt: string;
 }
 
@@ -56,7 +63,7 @@ export interface ProjectRepository {
 interface FileRow {
   key: string;
   projectId: string;
-  kind: FileKind;
+  kind: string;
   mimeType: string;
   data: ArrayBuffer;
 }
@@ -105,7 +112,10 @@ export async function openRepository(options: OpenOptions = {}): Promise<Project
       anchor: files.has(fileKey(record.id, 'anchor')),
       referenceImage: files.has(fileKey(record.id, 'referenceImage')),
     });
-    return { kind: 'project', record, health };
+    const missingItems = record.scene.items
+      .filter((item) => !files.has(fileKey(record.id, itemFileKind(item.id))))
+      .map((item) => item.id);
+    return { kind: 'project', record, health, missingItems };
   };
 
   return {
@@ -143,9 +153,11 @@ export async function openRepository(options: OpenOptions = {}): Promise<Project
         try {
           tx.objectStore(STORE_PROJECTS).put(record);
           const fileStore = tx.objectStore(STORE_FILES);
-          for (const kind of FILE_KINDS) {
-            const write = files[kind];
+          for (const [kind, write] of Object.entries(files) as Array<[FileKind, FilePayload | null | undefined]>) {
             if (write === undefined) continue;
+            if (!isFileKind(kind)) {
+              throw new StorageError('invalid-input', `Tipo de arquivo inválido: ${String(kind)}.`);
+            }
             if (write === null) {
               fileStore.delete(fileKey(record.id, kind));
             } else {
@@ -201,7 +213,7 @@ export async function openRepository(options: OpenOptions = {}): Promise<Project
             updated = {
               ...parsed.record,
               ...(patch.name !== undefined ? { name: patch.name } : {}),
-              ...(patch.content !== undefined ? { content: patch.content } : {}),
+              ...(patch.scene !== undefined ? { scene: patch.scene } : {}),
               updatedAt: patch.updatedAt,
             };
             store.put(updated);
@@ -235,11 +247,18 @@ export async function openRepository(options: OpenOptions = {}): Promise<Project
 
     async delete(id) {
       try {
+        // Todos os arquivos do projeto (alvo, foto e itens) têm chave "<id>/...";
+        // ids não contêm "/", então o prefixo não alcança arquivos de outro projeto.
+        // Só as chaves são lidas (não os dados), e sem depender de IDBKeyRange global.
+        const keysTx = db.transaction(STORE_FILES, 'readonly');
+        const allKeys = (await requestToPromise(keysTx.objectStore(STORE_FILES).getAllKeys())) as IDBValidKey[];
+        const prefix = `${id}/`;
+        const mine = allKeys.filter((key): key is string => typeof key === 'string' && key.startsWith(prefix));
+
         const tx = db.transaction([STORE_PROJECTS, STORE_FILES], 'readwrite');
         const done = transactionDone(tx);
         tx.objectStore(STORE_PROJECTS).delete(id);
-        const fileStore = tx.objectStore(STORE_FILES);
-        for (const kind of FILE_KINDS) fileStore.delete(fileKey(id, kind));
+        for (const key of mine) tx.objectStore(STORE_FILES).delete(key);
         await done;
       } catch (error) {
         throw toStorageError(error);

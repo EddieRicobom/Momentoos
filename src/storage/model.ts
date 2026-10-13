@@ -5,59 +5,120 @@ import { isSha256Hex } from './hash';
  * Versão do formato do registro de projeto (campo `formatVersion`).
  * Aumente quando a estrutura mudar e adicione o passo em MIGRATIONS.
  */
-export const PROJECT_FORMAT_VERSION = 1;
+export const PROJECT_FORMAT_VERSION = 2;
 
 export const NAME_MAX_LENGTH = 80;
 
 /** Engine que gerou o alvo; guardado para diagnosticar incompatibilidades. */
 export const ANCHOR_ENGINE = 'mind-ar@1.2.5';
 
-// ---------------------------------------------------------------- conteúdo
-
-/**
- * Tipos de conteúdo previstos. Hoje só 'none' é usado: a associação de
- * conteúdo real é a Etapa D. O campo existe desde já para que os projetos
- * salvos agora continuem válidos quando os demais tipos forem implementados.
- */
-export const CONTENT_TYPES = [
-  'none',
-  'image',
-  'gif',
-  'video',
-  'youtube',
-  'model3d',
-  'model3d-animated',
-] as const;
-export type ContentType = (typeof CONTENT_TYPES)[number];
+// ---------------------------------------------------------------- cena
 
 export type Vec3 = [number, number, number];
 
 /**
- * Ajustes de posicionamento do conteúdo. Convenção (a mesma do MindARThree,
- * ver docs/RASTREAMENTO.md): origem no centro do alvo, 1 unidade = largura do
- * alvo, +z saindo da pele. Valores reservados para o editor da Etapa D.
+ * Ajustes de posicionamento de um item. Convenção (a mesma do MindARThree, ver
+ * docs/RASTREAMENTO.md): origem no centro do alvo, 1 unidade = largura do
+ * alvo, +x para a direita, +y para cima, +z saindo da pele.
  */
-export interface ContentTransform {
-  /** Escala uniforme; 1 = largura do alvo. */
+export interface ItemTransform {
+  /** Escala uniforme; 1 = largura do alvo para mídia plana. */
   scale: number;
   /** Rotação em graus (x, y, z). */
   rotation: Vec3;
   /** Posição sobre o alvo. */
   position: Vec3;
-  /** Deslocamento fino aplicado depois da rotação, no eixo local do conteúdo. */
+  /** Deslocamento fino aplicado depois da rotação, no eixo local do item. */
   offset: Vec3;
 }
 
-export interface ContentConfig {
-  type: ContentType;
-  transform: ContentTransform;
+export function defaultTransform(): ItemTransform {
+  return { scale: 1, rotation: [0, 0, 0], position: [0, 0, 0], offset: [0, 0, 0] };
 }
 
-export function defaultContent(): ContentConfig {
+/**
+ * Tipos de item. 'youtube' NÃO existe de propósito: um iframe não entra numa
+ * cena WebGL e a reprodução depende de internet e das regras do próprio serviço.
+ */
+export const ITEM_TYPES = ['image', 'gif', 'video', 'model', 'audio'] as const;
+export type ItemType = (typeof ITEM_TYPES)[number];
+
+/** Itens que aparecem na cena 3D (áudio só toca). */
+export const VISUAL_ITEM_TYPES: readonly ItemType[] = ['image', 'gif', 'video', 'model'];
+
+/**
+ * Tipos MIME aceitos por tipo de item. Modelos aceitam só GLB (um arquivo
+ * único); glTF com arquivos externos não é suportado.
+ */
+export const ITEM_MIME: Record<ItemType, readonly string[]> = {
+  image: ['image/png', 'image/jpeg', 'image/webp'],
+  gif: ['image/gif'],
+  video: ['video/mp4', 'video/webm'],
+  model: ['model/gltf-binary'],
+  audio: ['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/mp4', 'audio/webm'],
+};
+
+/** Máximo de itens por projeto: um teto técnico para proteger a memória do celular, não um número de produto. */
+export const MAX_ITEMS_PER_PROJECT = 100;
+
+/** Tamanho máximo de cada arquivo de item (abaixo do limite de arquivo do backup, 64 MiB). */
+export const MAX_ITEM_FILE_BYTES = 48 * 1024 * 1024;
+
+export const ITEM_FILENAME_MAX_LENGTH = 200;
+
+export interface ItemOptions {
+  /** 0 a 1; vale para itens visuais. */
+  opacity: number;
+  /** Repetir (vídeo, áudio e animações do modelo). */
+  loop: boolean;
+  /** Vídeo: começa sem som (navegadores só liberam autoplay com som mudo). */
+  muted: boolean;
+  /** 0 a 1; vale para vídeo e áudio. */
+  volume: number;
+  /** Modelo: tocar as animações. */
+  animate: boolean;
+  /** Modelo: nome da animação a tocar; null = todas. */
+  clip: string | null;
+}
+
+export function defaultOptions(type: ItemType): ItemOptions {
   return {
-    type: 'none',
-    transform: { scale: 1, rotation: [0, 0, 0], position: [0, 0, 0], offset: [0, 0, 0] },
+    opacity: 1,
+    loop: true,
+    muted: type === 'video',
+    volume: 1,
+    animate: type === 'model',
+    clip: null,
   };
+}
+
+export interface ItemFileInfo extends StoredFileInfo {
+  /** Nome original do arquivo, só para exibir. */
+  fileName: string;
+  /** Dimensões em pixels (imagem, GIF e vídeo), quando conhecidas. */
+  width?: number;
+  height?: number;
+  /** Duração (vídeo e áudio), quando conhecida. */
+  durationMs?: number;
+}
+
+export interface SceneItem {
+  id: string;
+  type: ItemType;
+  name: string;
+  visible: boolean;
+  file: ItemFileInfo;
+  transform: ItemTransform;
+  options: ItemOptions;
+}
+
+/** O ambiente 3D ancorado: qualquer quantidade de itens (até MAX_ITEMS_PER_PROJECT). */
+export interface Scene {
+  items: SceneItem[];
+}
+
+export function emptyScene(): Scene {
+  return { items: [] };
 }
 
 // ---------------------------------------------------------------- registro
@@ -91,11 +152,21 @@ export interface ProjectRecord {
   updatedAt: string;
   referenceImage: ReferenceImageInfo | null;
   anchor: AnchorInfo | null;
-  content: ContentConfig;
+  scene: Scene;
 }
 
-export type FileKind = 'anchor' | 'referenceImage';
-export const FILE_KINDS: readonly FileKind[] = ['anchor', 'referenceImage'];
+/**
+ * Chave de um arquivo guardado junto do projeto: 'anchor', 'referenceImage' ou
+ * 'item:<id do item>'.
+ */
+export type FileKind = 'anchor' | 'referenceImage' | `item:${string}`;
+
+export const itemFileKind = (itemId: string): FileKind => `item:${itemId}`;
+
+export function isFileKind(value: unknown): value is FileKind {
+  if (value === 'anchor' || value === 'referenceImage') return true;
+  return typeof value === 'string' && value.startsWith('item:') && isValidId(value.slice(5));
+}
 
 // ---------------------------------------------------------------- nomes e ids
 
@@ -126,9 +197,18 @@ export type ParseResult =
 
 /**
  * Migrações por versão de origem: MIGRATIONS[n] converte um registro da
- * versão n para a n+1. Vazio porque a versão 1 é a primeira.
+ * versão n para a n+1.
+ *
+ * 1 → 2: o campo único `content` (que na prática era sempre "none": o app nunca
+ * gravou conteúdo real) dá lugar a `scene`, uma lista de itens. Registros v1
+ * começam com a cena vazia.
  */
-const MIGRATIONS: Record<number, (record: Record<string, unknown>) => Record<string, unknown>> = {};
+const MIGRATIONS: Record<number, (record: Record<string, unknown>) => Record<string, unknown>> = {
+  1: (record) => {
+    const { content: _content, ...rest } = record;
+    return { ...rest, scene: emptyScene() };
+  },
+};
 
 /**
  * Valida (e migra, se preciso) um registro lido do banco ou de um backup.
@@ -207,7 +287,7 @@ function validateRecord(r: Record<string, unknown>): string | null {
     if (!isIsoDate(anchor.compiledAt)) return 'data de compilação do alvo inválida.';
   }
 
-  return validateContent(r.content);
+  return validateScene(r.scene);
 }
 
 function validateFileInfo(info: Record<string, unknown>): string | null {
@@ -217,14 +297,70 @@ function validateFileInfo(info: Record<string, unknown>): string | null {
   return null;
 }
 
-function validateContent(content: unknown): string | null {
-  if (!isPlainObject(content)) return 'configuração de conteúdo ausente.';
-  if (!CONTENT_TYPES.includes(content.type as ContentType)) return 'tipo de conteúdo desconhecido.';
-  const t = content.transform;
+function validateTransform(t: unknown): string | null {
   if (!isPlainObject(t)) return 'ajustes de posicionamento ausentes.';
   if (!isFiniteNumber(t.scale) || (t.scale as number) <= 0) return 'escala inválida.';
   for (const key of ['rotation', 'position', 'offset'] as const) {
     if (!isVec3(t[key])) return `${key} inválido.`;
+  }
+  return null;
+}
+
+function validateOptions(o: unknown): string | null {
+  if (!isPlainObject(o)) return 'opções ausentes.';
+  for (const key of ['opacity', 'volume'] as const) {
+    const value = o[key];
+    if (!isFiniteNumber(value) || value < 0 || value > 1) return `${key} fora do intervalo 0–1.`;
+  }
+  for (const key of ['loop', 'muted', 'animate'] as const) {
+    if (typeof o[key] !== 'boolean') return `${key} inválido.`;
+  }
+  if (o.clip !== null && (typeof o.clip !== 'string' || o.clip.length === 0 || o.clip.length > 200)) {
+    return 'nome da animação inválido.';
+  }
+  return null;
+}
+
+function validateItem(item: unknown): string | null {
+  if (!isPlainObject(item)) return 'formato inválido.';
+  if (!isValidId(item.id)) return 'id inválido.';
+  if (!ITEM_TYPES.includes(item.type as ItemType)) return 'tipo desconhecido.';
+  const type = item.type as ItemType;
+  if (typeof item.name !== 'string' || normalizeName(item.name) === null) return 'nome ausente.';
+  if (typeof item.visible !== 'boolean') return 'visibilidade inválida.';
+
+  const file = item.file;
+  if (!isPlainObject(file)) return 'arquivo ausente.';
+  const fileProblem = validateFileInfo(file);
+  if (fileProblem) return `arquivo: ${fileProblem}`;
+  if (!ITEM_MIME[type].includes(file.mimeType as string)) {
+    return `tipo de arquivo ${String(file.mimeType)} não é aceito para ${type}.`;
+  }
+  if ((file.size as number) > MAX_ITEM_FILE_BYTES) return 'arquivo grande demais.';
+  if (typeof file.fileName !== 'string' || file.fileName.length === 0 || file.fileName.length > ITEM_FILENAME_MAX_LENGTH) {
+    return 'nome do arquivo inválido.';
+  }
+  for (const key of ['width', 'height', 'durationMs'] as const) {
+    if (file[key] !== undefined && !isPositive(file[key])) return `${key} inválido.`;
+  }
+
+  const transformProblem = validateTransform(item.transform);
+  if (transformProblem) return transformProblem;
+  return validateOptions(item.options);
+}
+
+function validateScene(scene: unknown): string | null {
+  if (!isPlainObject(scene) || !Array.isArray(scene.items)) return 'cena ausente.';
+  if (scene.items.length > MAX_ITEMS_PER_PROJECT) {
+    return `itens demais (o limite é ${MAX_ITEMS_PER_PROJECT}).`;
+  }
+  const seen = new Set<string>();
+  for (let index = 0; index < scene.items.length; index++) {
+    const problem = validateItem(scene.items[index]);
+    if (problem) return `item ${index + 1}: ${problem}`;
+    const id = (scene.items[index] as { id: string }).id;
+    if (seen.has(id)) return `item ${index + 1}: id repetido.`;
+    seen.add(id);
   }
   return null;
 }

@@ -4,7 +4,7 @@ import { newId, sha256Hex } from './hash';
 import {
   ANCHOR_ENGINE,
   PROJECT_FORMAT_VERSION,
-  defaultContent,
+  emptyScene,
   normalizeName,
   type ProjectRecord,
 } from './model';
@@ -73,7 +73,7 @@ export async function createProject(
       engine: ANCHOR_ENGINE,
       compiledAt: nowIso,
     },
-    content: defaultContent(),
+    scene: emptyScene(),
   };
 
   await repo.save(record, {

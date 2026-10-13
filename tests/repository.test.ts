@@ -163,15 +163,25 @@ describe('updateMeta', () => {
     expect(await repo.getEntry('p1')).toMatchObject({ record: updated });
   });
 
-  it('atualiza o conteúdo configurado', async () => {
+  it('atualiza a cena', async () => {
     const repo = await freshRepository();
     await repo.save(await makeRecord({ id: 'p1' }));
-    const updated = await repo.updateMeta('p1', {
-      content: { type: 'image', transform: { scale: 2, rotation: [0, 0, 90], position: [0.1, 0, 0], offset: [0, 0, 0.05] } },
-      updatedAt: '2026-11-01T10:00:00.000Z',
-    });
-    expect(updated.content.type).toBe('image');
-    expect(updated.content.transform.scale).toBe(2);
+    const scene = {
+      items: [
+        {
+          id: 'i1',
+          type: 'image' as const,
+          name: 'Foto',
+          visible: true,
+          file: { mimeType: 'image/png', size: 4, sha256: 'b'.repeat(64), fileName: 'f.png' },
+          transform: { scale: 2, rotation: [0, 0, 90] as [number, number, number], position: [0.1, 0, 0] as [number, number, number], offset: [0, 0, 0.05] as [number, number, number] },
+          options: { opacity: 1, loop: true, muted: false, volume: 1, animate: false, clip: null },
+        },
+      ],
+    };
+    const updated = await repo.updateMeta('p1', { scene, updatedAt: '2026-11-01T10:00:00.000Z' });
+    expect(updated.scene.items).toHaveLength(1);
+    expect(updated.scene.items[0]?.transform.scale).toBe(2);
   });
 
   it('projeto inexistente: erro not-found', async () => {
@@ -203,6 +213,75 @@ describe('delete', () => {
   it('excluir algo que não existe não dá erro', async () => {
     const repo = await freshRepository();
     await expect(repo.delete('fantasma')).resolves.toBeUndefined();
+  });
+});
+
+describe('arquivos de itens', () => {
+  const item = (id: string) => ({
+    id,
+    type: 'image' as const,
+    name: id,
+    visible: true,
+    file: { mimeType: 'image/png', size: 64, sha256: 'c'.repeat(64), fileName: `${id}.png` },
+    transform: { scale: 1, rotation: [0, 0, 0] as [number, number, number], position: [0, 0, 0] as [number, number, number], offset: [0, 0, 0] as [number, number, number] },
+    options: { opacity: 1, loop: true, muted: false, volume: 1, animate: false, clip: null },
+  });
+
+  it('grava, lê, substitui e apaga arquivos de item pela chave item:<id>', async () => {
+    const repo = await freshRepository();
+    const record = await makeRecord({ id: 'p1', scene: { items: [item('i1'), item('i2')] } });
+    await repo.save(record, {
+      'item:i1': { mimeType: 'image/png', data: fakeImage(1) },
+      'item:i2': { mimeType: 'image/png', data: fakeImage(2) },
+    });
+    expect(new Uint8Array((await repo.getFile('p1', 'item:i1'))!.data)).toEqual(new Uint8Array(fakeImage(1)));
+    await repo.save(record, { 'item:i1': { mimeType: 'image/png', data: fakeImage(9) } });
+    expect(new Uint8Array((await repo.getFile('p1', 'item:i1'))!.data)).toEqual(new Uint8Array(fakeImage(9)));
+    expect(new Uint8Array((await repo.getFile('p1', 'item:i2'))!.data)).toEqual(new Uint8Array(fakeImage(2)));
+    await repo.save(record, { 'item:i2': null });
+    expect(await repo.getFile('p1', 'item:i2')).toBeNull();
+    expect(await repo.getFile('p1', 'item:i1')).not.toBeNull();
+  });
+
+  it('a lista informa quais itens estão sem arquivo, sem mudar a saúde do projeto', async () => {
+    const repo = await freshRepository();
+    const record = await makeRecord({ id: 'p1', scene: { items: [item('i1'), item('i2')] } });
+    await repo.save(record, {
+      anchor: { mimeType: BIN, data: toBuffer(makeMind()) },
+      'item:i1': { mimeType: 'image/png', data: fakeImage(1) },
+    });
+    const entry = await repo.getEntry('p1');
+    expect(entry).toMatchObject({ kind: 'project', missingItems: ['i2'], health: { status: 'ready' } });
+    const [listed] = await repo.list();
+    expect(listed).toMatchObject({ kind: 'project', missingItems: ['i2'] });
+  });
+
+  it('chave de arquivo inválida é recusada e a gravação inteira é desfeita', async () => {
+    const repo = await freshRepository();
+    const record = await makeRecord({ id: 'p1' });
+    await expect(
+      repo.save(record, {
+        anchor: { mimeType: BIN, data: toBuffer(makeMind()) },
+        ['../p2/anchor' as never]: { mimeType: BIN, data: toBuffer(makeMind()) },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid-input' });
+    expect(await repo.getEntry('p1')).toBeNull();
+    expect(await repo.getFile('p1', 'anchor')).toBeNull();
+  });
+
+  it('excluir apaga os arquivos dos itens e não toca em projetos de id com o mesmo começo', async () => {
+    const repo = await freshRepository();
+    for (const id of ['a', 'ab']) {
+      await repo.save(await makeRecord({ id, scene: { items: [item('i1')] } }), {
+        anchor: { mimeType: BIN, data: toBuffer(makeMind()) },
+        'item:i1': { mimeType: 'image/png', data: fakeImage(1) },
+      });
+    }
+    await repo.delete('a');
+    expect(await repo.getFile('a', 'item:i1')).toBeNull();
+    expect(await repo.getFile('ab', 'item:i1')).not.toBeNull();
+    expect(await repo.getFile('ab', 'anchor')).not.toBeNull();
+    expect(await repo.getEntry('ab')).not.toBeNull();
   });
 });
 

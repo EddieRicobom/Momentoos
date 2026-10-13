@@ -25,7 +25,7 @@ describe('createProject', () => {
     expect(record.createdAt).toBe('2026-10-13T18:00:00.000Z');
     expect(record.updatedAt).toBe(record.createdAt);
     expect(record.id).toMatch(/^[0-9a-f]{32}$/);
-    expect(record.content.type).toBe('none');
+    expect(record.scene).toEqual({ items: [] });
     // Dimensões vêm do próprio .mind, não do que o chamador disse.
     expect(record.anchor).toMatchObject({ width: 800, height: 600, mindFormat: 2, size: anchor.byteLength });
     expect(record.anchor?.sha256).toBe(await sha256Hex(anchor));

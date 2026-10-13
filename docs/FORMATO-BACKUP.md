@@ -2,7 +2,7 @@
 
 Este documento descreve como o app guarda os projetos no aparelho (IndexedDB) e
 o formato do arquivo de backup (`.tattoo-ar.zip`). Ele descreve o que o código
-da Etapa C faz hoje; foi conferido contra o código e os testes automatizados,
+das Etapas C e D1 faz hoje; foi conferido contra o código e os testes automatizados,
 **não** contra um navegador real (ver "O que não foi validado").
 
 ## 1. Armazenamento local (IndexedDB)
@@ -11,15 +11,16 @@ Banco `tattoo-ar`, esquema versão 1, com dois stores:
 
 | Store | Chave | Conteúdo |
 |---|---|---|
-| `projects` | `id` | Metadados do projeto (JSON): nome, datas, descrição do alvo e da foto, conteúdo configurado. **Sem** os arquivos. |
-| `files` | `"<id>/anchor"` ou `"<id>/referenceImage"` | Os bytes (`ArrayBuffer`) e o tipo MIME do alvo `.mind` e da foto de referência. |
+| `projects` | `id` | Metadados do projeto (JSON): nome, datas, descrição do alvo e da foto e a **cena** (lista de itens com seus ajustes). **Sem** os arquivos. |
+| `files` | `"<id>/anchor"`, `"<id>/referenceImage"` ou `"<id>/item:<itemId>"` | Os bytes (`ArrayBuffer`) e o tipo MIME do alvo `.mind`, da foto de referência e de cada item da cena. |
 
 Regras:
 
 - Registro e arquivos de um projeto são gravados **na mesma transação**: ou
   entra tudo ou nada. Um erro de gravação (por exemplo, falta de espaço) não
   deixa projeto pela metade.
-- Excluir apaga o registro e os dois arquivos na mesma transação.
+- Excluir apaga o registro e **todos** os arquivos do projeto (alvo, foto e itens, achados pelo prefixo `<id>/`) na mesma transação.
+- Adicionar, remover ou duplicar um item grava o registro e o arquivo do item juntos, também numa transação só.
 - O `id` tem 32 caracteres hexadecimais aleatórios (`crypto.getRandomValues`).
 - Cada arquivo tem tamanho e SHA-256 no registro. Ao abrir o alvo, o app
   confere tamanho, hash e versão do `.mind` antes de usá-lo. Se algo não
@@ -31,13 +32,36 @@ Regras:
 Há duas versões independentes:
 
 - **Esquema do IndexedDB** (`DB_VERSION`, hoje 1): estrutura de stores.
-- **Formato do projeto** (`formatVersion` em cada registro, hoje 1): conteúdo
-  do registro. Existe uma cadeia de migrações (vazia por enquanto). Um registro
+- **Formato do projeto** (`formatVersion` em cada registro, hoje 2): conteúdo
+  do registro. Existe uma cadeia de migrações; a 1→2 troca o antigo campo
+  `content` (que nunca guardou nada além de "nenhum") por uma `scene` vazia. Um registro
   de versão **mais nova** que a do app não é alterado nem apagado: aparece na
   lista como "Versão mais nova" e o app manda atualizar.
 
 Um registro que não passa na validação aparece como "Ilegível" e é mantido; só
 some se você mandar excluir.
+
+### A cena (itens)
+
+`scene.items` é a lista, em ordem, dos itens ancorados na tatuagem. Cada item:
+
+| Campo | Significado |
+|---|---|
+| `id` | 1 a 64 caracteres `A-Za-z0-9_-` (o app gera 16 hexadecimais) |
+| `type` | `image`, `gif`, `video`, `model` (GLB) ou `audio` (mp3, ogg, wav, m4a) |
+| `name`, `visible` | Nome de exibição e se aparece |
+| `file` | `mimeType`, `size`, `sha256`, `fileName` e, quando conhecidos, `width`, `height`, `durationMs` |
+| `transform` | `scale`, `rotation` (graus, x y z), `position` (x y z, em larguras do alvo) e `offset` (x y z, em larguras do alvo) |
+| `options` | `opacity`, `loop`, `muted`, `volume`, `animate`, `clip` (nome da animação do GLB ou `null`) |
+
+Limites: até 100 itens por projeto e 48 MiB por arquivo de item. O tipo vem da
+extensão do arquivo e o conteúdo é conferido pela "assinatura" (primeiros
+bytes) do formato; isso evita extensão trocada, mas **não** garante que o
+navegador consiga decodificar o arquivo. YouTube/links não são itens (precisam
+de internet e de um iframe, que não entra na cena 3D).
+
+O sistema de coordenadas é o do MindAR: origem no centro do alvo, 1 unidade =
+largura do alvo, +z para fora da pele.
 
 ### Situação de cada projeto
 
@@ -61,17 +85,19 @@ projects/
     project.json
     anchor.mind               (se houver alvo íntegro)
     reference-image.png|jpg|webp|bin   (se houver foto de referência)
+    items/<itemId>.<ext>      (formato 2: um arquivo por item da cena)
 ```
 
 A extensão da foto vem do tipo MIME (`image/png`→png, `image/jpeg`→jpg,
-`image/webp`→webp, qualquer outro→bin).
+`image/webp`→webp, qualquer outro→bin). A de cada item também (png, jpg, webp,
+gif, mp4, webm, glb, mp3, ogg, wav, m4a; `bin` para tipo inesperado).
 
 ### manifest.json
 
 ```json
 {
   "format": "tattoo-ar-backup",
-  "formatVersion": 1,
+  "formatVersion": 2,
   "createdAt": "2026-10-13T18:30:00.000Z",
   "app": { "name": "momentoos", "version": "0.1.0" },
   "projects": [
@@ -81,13 +107,16 @@ A extensão da foto vem do tipo MIME (`image/png`→png, `image/jpeg`→jpg,
       "dir": "projects/<id>",
       "project":        { "path": "projects/<id>/project.json", "size": 812, "sha256": "<64 hex>" },
       "anchor":         { "path": "projects/<id>/anchor.mind", "size": 1234567, "sha256": "<64 hex>" },
-      "referenceImage": { "path": "projects/<id>/reference-image.png", "size": 345678, "sha256": "<64 hex>" }
+      "referenceImage": { "path": "projects/<id>/reference-image.png", "size": 345678, "sha256": "<64 hex>" },
+      "items": [
+        { "id": "<itemId>", "file": { "path": "projects/<id>/items/<itemId>.glb", "size": 98765, "sha256": "<64 hex>" } }
+      ]
     }
   ]
 }
 ```
 
-`anchor` e `referenceImage` são omitidos quando não há o arquivo (ou quando ele
+`items` só existe quando a cena tem itens. `anchor` e `referenceImage` são omitidos quando não há o arquivo (ou quando ele
 foi deixado de fora por estar corrompido). `name` no manifesto é só para quem
 abrir o arquivo à mão; o nome de verdade está em `project.json`.
 
@@ -95,7 +124,9 @@ abrir o arquivo à mão; o nome de verdade está em `project.json`.
 
 - Só entra no ZIP o que está íntegro: um arquivo cujo tamanho ou SHA-256 não
   confere com o registro é deixado de fora **com aviso**, em vez de ser copiado
-  corrompido sem ninguém saber. Um alvo corrompido de um projeto que tem foto
+  corrompido sem ninguém saber. O mesmo vale para os itens: um item cujo
+  arquivo falta ou não confere sai da cena exportada, com aviso, e o resto do
+  projeto segue. Um alvo corrompido de um projeto que tem foto
   vira projeto "Precisa recompilar" no backup.
 - Registros ilegíveis, de versão mais nova ou sem nenhum arquivo íntegro não
   entram, e são listados no resultado.
@@ -113,15 +144,17 @@ abrir o arquivo à mão; o nome de verdade está em `project.json`.
 3. O manifesto é validado: formato e versão (versão mais nova → mensagem para
    atualizar o app), ids seguros (sem `/`, `..` etc.), caminhos **exatamente**
    iguais aos esperados para aquele id (nada de `../` ou caminho de outro
-   projeto), extensão de imagem permitida, tamanhos inteiros e hashes de 64
+   projeto), extensão permitida (imagem ou item), tamanhos inteiros e hashes de 64
    hexadecimais, ids sem repetição.
 4. Segunda passada: só os caminhos declarados, e só se o tamanho dentro do ZIP
    for igual ao declarado. Arquivos extras no ZIP nunca são lidos.
 5. Por projeto: confere o SHA-256 do `project.json`, valida o conteúdo (mesma
    validação dos registros locais), confere o id contra o manifesto, e confere
-   tamanho e SHA-256 do alvo e da foto. O cabeçalho do `.mind` também é
+   tamanho e SHA-256 do alvo, da foto e de cada item da cena (e, nos itens, a
+   assinatura do formato). O cabeçalho do `.mind` também é
    verificado (versão do formato do MindAR). Arquivo que não confere é
-   **descartado com aviso**; o projeto só entra se sobrar o alvo ou a foto.
+   **descartado com aviso**; o projeto só entra se sobrar o alvo ou a foto. Um
+   item descartado sai da cena do projeto importado (não fica item sem arquivo).
 6. Um projeto ruim não impede a importação dos outros; ele aparece como "não
    importado" com o motivo.
 
@@ -135,6 +168,14 @@ Colisão de id (já existe um projeto com o mesmo id):
 Limitação conhecida: reimportar várias vezes um backup cujo projeto original
 foi alterado depois cria uma nova cópia a cada vez.
 
+### Compatibilidade
+
+- O app lê backups dos formatos **1 e 2**. Um backup 1 (sem itens) entra com
+  cena vazia; o `project.json` antigo é migrado na leitura.
+- Backups exportados pelo formato 2 **não** abrem em versões antigas do app
+  (elas recusam por formato mais novo, sem perder nada).
+- Backup de formato maior que o conhecido é recusado com pedido para atualizar.
+
 ## 3. O que não foi validado
 
 - Tudo acima foi exercitado por testes automatizados com IndexedDB **simulado**
@@ -144,5 +185,6 @@ foi alterado depois cria uma nova cópia a cada vez.
   nem a cota real do navegador.
 - O pedido de armazenamento persistente (`navigator.storage.persist()`) é um
   pedido; o navegador decide e pode negar. O backup é a proteção real.
+- Não foi medido o custo de backups com muitos itens grandes (vídeos, GLB) em celular; o limite de 48 MiB por item e 512 MiB no total é uma salvaguarda, não um valor testado em aparelho.
 - O download do ZIP e a escolha do arquivo na importação dependem do
   comportamento do navegador do celular (pasta de downloads, seletor de arquivos).

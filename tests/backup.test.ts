@@ -10,10 +10,11 @@ import {
   type BackupManifest,
 } from '../src/storage/backup';
 import { sha256Hex } from '../src/storage/hash';
-import { PROJECT_FORMAT_VERSION } from '../src/storage/model';
+import { PROJECT_FORMAT_VERSION, itemFileKind } from '../src/storage/model';
 import { createProject, openProjectAnchor } from '../src/storage/projects';
 import type { ProjectRepository } from '../src/storage/repository';
-import { fakeImage, freshRepository, makeMind, makeRecord, toBuffer } from './helpers';
+import { addItem, openItemFile, updateItem } from '../src/storage/scene';
+import { fakeImage, freshRepository, makeMind, makeRecord, signedBytes, toBuffer } from './helpers';
 
 const BIN = 'application/octet-stream';
 const OPTIONS = { appVersion: '0.0.0-teste', now: new Date('2026-10-13T18:30:00.000Z') };
@@ -33,6 +34,12 @@ type Files = Record<string, Uint8Array>;
 function rezip(zip: Uint8Array, mutate: (files: Files) => void): Uint8Array {
   const files = unzipSync(zip);
   mutate(files);
+  return zipSync(files);
+}
+
+async function rezipAsync(zip: Uint8Array, mutate: (files: Files) => Promise<void>): Promise<Uint8Array> {
+  const files = unzipSync(zip);
+  await mutate(files);
   return zipSync(files);
 }
 
@@ -534,6 +541,279 @@ describe('importação de arquivos inválidos ou hostis', () => {
       await expect(importBackup(await freshRepository(), zip, { limits: { maxManifestBytes: 10 } })).rejects.toMatchObject({
         code: 'not-a-backup',
       });
+    });
+  });
+});
+
+// ------------------------------------------------------------ itens da cena (formato 2)
+
+describe('backup com itens da cena', () => {
+  const files3 = [
+    ['rosa.png', 'image/png'],
+    ['bicho.glb', 'model/gltf-binary'],
+    ['som.mp3', 'audio/mpeg'],
+  ] as const;
+
+  async function projectWithItems() {
+    const repo = await freshRepository('origem');
+    const project = await addProject(repo, 'Braço', 1);
+    const items = [];
+    for (const [i, [fileName, mime]] of files3.entries()) {
+      const { item } = await addItem(repo, project.id, {
+        file: { data: signedBytes(mime, 300, i + 1), fileName },
+        transform: { scale: 1 + i, position: [0.1 * i, 0, 0] },
+        options: { opacity: 0.5 + i / 10 },
+      });
+      items.push(item);
+    }
+    return { repo, id: project.id, items };
+  }
+
+  const entryOf = async (repo: ProjectRepository, id: string) => {
+    const entry = await repo.getEntry(id);
+    if (entry?.kind !== 'project') throw new Error('esperado projeto');
+    return entry;
+  };
+
+  it('declara o formato 2 e guarda cada item em projects/<id>/items/<itemId>.<ext>', async () => {
+    expect(BACKUP_FORMAT_VERSION).toBe(2);
+    const { repo, id, items } = await projectWithItems();
+    const result = await exportBackup(repo, 'all', OPTIONS);
+    const manifest = readManifest(result.bytes);
+    const zipFiles = unzipSync(result.bytes);
+
+    expect(manifest.formatVersion).toBe(2);
+    expect(result.warnings).toEqual([]);
+    const entry = manifest.projects[0]!;
+    expect(entry.items?.map((i) => [i.id, i.file.path])).toEqual([
+      [items[0]!.id, `projects/${id}/items/${items[0]!.id}.png`],
+      [items[1]!.id, `projects/${id}/items/${items[1]!.id}.glb`],
+      [items[2]!.id, `projects/${id}/items/${items[2]!.id}.mp3`],
+    ]);
+    for (const { file } of entry.items!) {
+      const bytes = zipFiles[file.path]!;
+      expect(bytes.byteLength).toBe(file.size);
+      expect(await sha256Hex(bytes)).toBe(file.sha256);
+    }
+  });
+
+  it('projeto sem itens não ganha o campo items no manifesto', async () => {
+    const repo = await freshRepository();
+    await addProject(repo, 'Vazio', 1);
+    const manifest = readManifest((await exportBackup(repo, 'all', OPTIONS)).bytes);
+    expect(manifest.projects[0]!.items).toBeUndefined();
+  });
+
+  it('ida e volta: itens, ajustes e arquivos chegam idênticos', async () => {
+    const { repo, id, items } = await projectWithItems();
+    const { bytes } = await exportBackup(repo, 'all', OPTIONS);
+
+    const destino = await freshRepository('destino');
+    const report = await importBackup(destino, bytes);
+    expect(report.skipped).toEqual([]);
+    expect(report.warnings).toEqual([]);
+
+    const entry = await entryOf(destino, id);
+    expect(entry.record).toEqual((await entryOf(repo, id)).record);
+    expect(entry.record.scene.items).toEqual(items);
+    expect(entry.missingItems).toEqual([]);
+    for (const [i, item] of items.entries()) {
+      const opened = await openItemFile(destino, id, item.id);
+      expect(new Uint8Array(opened.data)).toEqual(new Uint8Array(signedBytes(files3[i]![1], 300, i + 1)));
+    }
+  });
+
+  it('importar com colisão de id leva os itens junto para a cópia', async () => {
+    const { repo, id, items } = await projectWithItems();
+    const { bytes } = await exportBackup(repo, 'all', OPTIONS);
+    await updateItem(repo, id, items[0]!.id, { visible: false }, new Date('2026-12-01T00:00:00.000Z'));
+
+    const report = await importBackup(repo, bytes);
+    expect(report.imported[0]?.renamed).toBe(true);
+    const copyId = report.imported[0]!.id;
+    expect(copyId).not.toBe(id);
+    const copy = await entryOf(repo, copyId);
+    expect(copy.record.scene.items).toHaveLength(3);
+    expect(copy.record.scene.items[0]!.visible).toBe(true);
+    expect(copy.missingItems).toEqual([]);
+    const opened = await openItemFile(repo, copyId, items[1]!.id);
+    expect(new Uint8Array(opened.data)).toEqual(new Uint8Array(signedBytes('model/gltf-binary', 300, 2)));
+  });
+
+  it('exportar: item com arquivo corrompido ou ausente fica de fora, com aviso, e o resto sai', async () => {
+    const { repo, id, items } = await projectWithItems();
+    const record = (await entryOf(repo, id)).record;
+    await repo.save(record, {
+      [itemFileKind(items[0]!.id)]: { mimeType: 'image/png', data: signedBytes('image/png', 300, 77) }, // mesmo tamanho, outro conteúdo
+      [itemFileKind(items[1]!.id)]: null,
+    });
+
+    const result = await exportBackup(repo, 'all', OPTIONS);
+    expect(result.warnings).toHaveLength(2);
+    expect(result.warnings.join(' ')).toMatch(/rosa.*corrompido/);
+    expect(result.warnings.join(' ')).toMatch(/bicho.*ausente/);
+    const manifest = readManifest(result.bytes);
+    expect(manifest.projects[0]!.items?.map((i) => i.id)).toEqual([items[2]!.id]);
+    const saved = JSON.parse(strFromU8(unzipSync(result.bytes)[manifest.projects[0]!.project.path]!));
+    expect(saved.scene.items.map((i: { id: string }) => i.id)).toEqual([items[2]!.id]);
+    // E o backup resultante é importável sem avisos.
+    const report = await importBackup(await freshRepository('d'), result.bytes);
+    expect(report.warnings).toEqual([]);
+    expect(report.imported).toHaveLength(1);
+  });
+
+  describe('importação adulterada', () => {
+    async function zipWith() {
+      const { repo, id, items } = await projectWithItems();
+      const { bytes } = await exportBackup(repo, 'all', OPTIONS);
+      return { zip: bytes, id, items };
+    }
+    const pathOf = (id: string, itemId: string, ext: string) => `projects/${id}/items/${itemId}.${ext}`;
+
+    it('item adulterado com o mesmo tamanho: só ele é descartado, com aviso', async () => {
+      const { zip, id, items } = await zipWith();
+      const tampered = rezip(zip, (files) => {
+        const path = pathOf(id, items[1]!.id, 'glb');
+        const b = new Uint8Array(files[path]!);
+        b[b.length - 1] = (b[b.length - 1]! + 1) % 256;
+        files[path] = b;
+      });
+      const repo = await freshRepository();
+      const report = await importBackup(repo, tampered);
+      expect(report.warnings.join(' ')).toMatch(/"bicho".*corrompido/);
+      const entry = await entryOf(repo, id);
+      expect(entry.record.scene.items.map((i) => i.id)).toEqual([items[0]!.id, items[2]!.id]);
+      expect(await repo.getFile(id, itemFileKind(items[1]!.id))).toBeNull();
+      expect(entry.missingItems).toEqual([]);
+    });
+
+    it('item com tamanho diferente do declarado não chega nem a ser descompactado', async () => {
+      const { zip, id, items } = await zipWith();
+      const tampered = rezip(zip, (files) => {
+        files[pathOf(id, items[0]!.id, 'png')] = new Uint8Array(signedBytes('image/png', 301));
+      });
+      const repo = await freshRepository();
+      const report = await importBackup(repo, tampered);
+      expect(report.warnings.join(' ')).toMatch(/"rosa".*ausente/);
+      expect((await entryOf(repo, id)).record.scene.items).toHaveLength(2);
+    });
+
+    it('item removido do ZIP: ignorado com aviso', async () => {
+      const { zip, id, items } = await zipWith();
+      const tampered = rezip(zip, (files) => {
+        delete files[pathOf(id, items[2]!.id, 'mp3')];
+      });
+      const report = await importBackup(await freshRepository(), tampered);
+      expect(report.warnings.join(' ')).toMatch(/"som".*ausente/);
+      expect(report.imported).toHaveLength(1);
+    });
+
+    it('conteúdo que não bate com o formato declarado é descartado mesmo com hash coerente', async () => {
+      // Quem monta o ZIP à mão recalcula tamanhos e hashes; a assinatura do formato ainda denuncia.
+      const { zip, id, items } = await zipWith();
+      const fake = new Uint8Array(300).fill(65); // "AAAA…" no lugar de um PNG
+      const sha = await sha256Hex(fake);
+      const tampered = await rezipAsync(zip, async (files) => {
+        const manifest = JSON.parse(strFromU8(files['manifest.json']!));
+        files[pathOf(id, items[0]!.id, 'png')] = fake;
+        const project = JSON.parse(strFromU8(files[`projects/${id}/project.json`]!));
+        project.scene.items.find((i: any) => i.id === items[0]!.id).file.sha256 = sha;
+        const projectBytes = strToU8(JSON.stringify(project));
+        files[`projects/${id}/project.json`] = projectBytes;
+        manifest.projects[0].project.size = projectBytes.byteLength;
+        manifest.projects[0].project.sha256 = await sha256Hex(projectBytes);
+        manifest.projects[0].items.find((i: any) => i.id === items[0]!.id).file.sha256 = sha;
+        writeManifest(files, manifest);
+      });
+      const repo = await freshRepository();
+      const report = await importBackup(repo, tampered);
+      expect(report.warnings.join(' ')).toMatch(/"rosa".*diferente do formato/);
+      expect((await entryOf(repo, id)).record.scene.items.map((i) => i.id)).toEqual([items[1]!.id, items[2]!.id]);
+    });
+
+    it.each([
+      ['caminho com ../', (e: any) => (e.items[0].file.path = '../fora.png')],
+      ['caminho de outro projeto', (e: any) => (e.items[0].file.path = 'projects/outro/items/x.png')],
+      ['extensão não permitida', (e: any) => (e.items[0].file.path = e.items[0].file.path.replace('.png', '.exe'))],
+      ['id do item diferente do caminho', (e: any) => (e.items[0].id = 'outroid')],
+      ['ids de item repetidos', (e: any) => e.items.push(e.items[0])],
+      ['itens que não são lista', (e: any) => (e.items = 'x')],
+      ['item sem arquivo', (e: any) => delete e.items[0].file],
+      ['hash malformado', (e: any) => (e.items[0].file.sha256 = 'abc')],
+      ['item acima do limite por item', (e: any) => (e.items[0].file.size = 49 * 1024 * 1024)],
+      ['itens demais', (e: any) => (e.items = Array.from({ length: 101 }, (_, i) => ({ id: `i${i}`, file: e.items[0].file })))],
+    ])('manifesto inválido é recusado: %s', async (_label, change) => {
+      const { zip } = await zipWith();
+      const bad = rezip(zip, (files) => {
+        const manifest = JSON.parse(strFromU8(files['manifest.json']!));
+        change(manifest.projects[0]);
+        writeManifest(files, manifest);
+      });
+      await expect(importBackup(await freshRepository(), bad)).rejects.toMatchObject({ code: 'invalid-manifest' });
+    });
+
+    it('arquivo de item não declarado no manifesto nunca é lido', async () => {
+      const { zip, id } = await zipWith();
+      const extra = rezip(zip, (files) => {
+        files[pathOf(id, 'clandestino', 'png')] = new Uint8Array(signedBytes('image/png', 300));
+      });
+      const repo = await freshRepository();
+      const report = await importBackup(repo, extra);
+      expect(report.warnings).toEqual([]);
+      expect(await repo.getFile(id, itemFileKind('clandestino'))).toBeNull();
+    });
+
+    it('limite total de bytes vale também para os itens', async () => {
+      const { zip } = await zipWith();
+      await expect(importBackup(await freshRepository(), zip, { limits: { maxTotalBytes: 1500 } })).rejects.toMatchObject({
+        code: 'too-large',
+      });
+    });
+  });
+
+  describe('compatibilidade com o formato 1', () => {
+    /** Reescreve um backup v2 (sem itens) como o app antigo o gravaria. */
+    async function asVersion1(): Promise<{ zip: Uint8Array; id: string }> {
+      const repo = await freshRepository('origem');
+      const project = await addProject(repo, 'Antigo', 1);
+      const { bytes } = await exportBackup(repo, 'all', OPTIONS);
+      const zip = await rezipAsync(bytes, async (files) => {
+        const manifest = JSON.parse(strFromU8(files['manifest.json']!));
+        const path = manifest.projects[0].project.path;
+        const record = JSON.parse(strFromU8(files[path]!));
+        delete record.scene;
+        record.formatVersion = 1;
+        record.content = { type: 'none', transform: { scale: 1, rotation: [0, 0, 0], position: [0, 0, 0], offset: [0, 0, 0] } };
+        const projectBytes = strToU8(JSON.stringify(record));
+        files[path] = projectBytes;
+        manifest.formatVersion = 1;
+        manifest.projects[0].project.size = projectBytes.byteLength;
+        manifest.projects[0].project.sha256 = await sha256Hex(projectBytes);
+        writeManifest(files, manifest);
+      });
+      return { zip, id: project.id };
+    }
+
+    it('um backup do formato 1 ainda importa, e o projeto sai com cena vazia no formato atual', async () => {
+      const { zip, id } = await asVersion1();
+      const repo = await freshRepository();
+      const report = await importBackup(repo, zip);
+      expect(report.skipped).toEqual([]);
+      expect(report.warnings).toEqual([]);
+      const entry = await entryOf(repo, id);
+      expect(entry.record.formatVersion).toBe(PROJECT_FORMAT_VERSION);
+      expect(entry.record.scene).toEqual({ items: [] });
+      expect(entry.health).toEqual({ status: 'ready' });
+    });
+
+    it('backup de um formato mais novo que o 2 continua recusado', async () => {
+      const { zip } = await asVersion1();
+      const newer = rezip(zip, (files) => {
+        const manifest = JSON.parse(strFromU8(files['manifest.json']!));
+        manifest.formatVersion = 3;
+        writeManifest(files, manifest);
+      });
+      await expect(importBackup(await freshRepository(), newer)).rejects.toMatchObject({ code: 'newer-version' });
     });
   });
 });
