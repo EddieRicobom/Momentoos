@@ -1,3 +1,6 @@
+import { rectToPixels, type NormalizedRect } from './cropGeometry';
+import { applyEnhancement, rgbaToLuma, suggestCropBox, type EnhanceMode } from './targetPixels';
+
 /**
  * Preparo da foto da tatuagem antes da compilação.
  *
@@ -55,9 +58,9 @@ export function checkTargetSize(width: number, height: number): SizeCheck {
 }
 
 export interface PreparedTarget {
-  /** Imagem já reduzida, decodificada e pronta para o compilador. */
+  /** Imagem já recortada, reduzida, realçada e decodificada, pronta para o compilador. */
   image: HTMLImageElement;
-  /** Mesmo conteúdo da imagem, em PNG (para guardar como referência depois). */
+  /** Mesmo conteúdo da imagem, em PNG (é o que se guarda como referência: recompilar reproduz o alvo). */
   blob: Blob;
   /** Libere com `dispose()` quando não precisar mais da imagem. */
   objectUrl: string;
@@ -66,46 +69,80 @@ export interface PreparedTarget {
   originalWidth: number;
   originalHeight: number;
   scale: number;
+  enhance: EnhanceMode;
+  crop: NormalizedRect | null;
   dispose(): void;
 }
 
+/** Foto original decodificada, mantida para ajustar recorte e contraste antes de compilar. */
+export interface SourceImage {
+  image: HTMLImageElement;
+  /** URL para mostrar a foto na tela; liberada em dispose(). */
+  objectUrl: string;
+  width: number;
+  height: number;
+  dispose(): void;
+}
+
+export interface PrepareOptions {
+  /** Área da tatuagem (normalizada); null/ausente = foto inteira. */
+  crop?: NormalizedRect | null;
+  enhance?: EnhanceMode;
+}
+
 /**
- * Lê o arquivo escolhido (galeria ou câmera), aplica a orientação EXIF
- * (navegadores modernos fazem isso ao decodificar <img>), reduz se necessário
- * e devolve uma imagem decodificada como HTMLImageElement real: é o tipo que a
- * API documentada do Compiler espera.
+ * Lê o arquivo escolhido (galeria ou câmera) e decodifica como HTMLImageElement
+ * (navegadores modernos aplicam a orientação EXIF ao decodificar).
  */
-export async function prepareTargetImage(file: Blob): Promise<PreparedTarget> {
-  const sourceUrl = URL.createObjectURL(file);
-  let original: HTMLImageElement;
+export async function loadSourceImage(file: Blob): Promise<SourceImage> {
+  const objectUrl = URL.createObjectURL(file);
+  let image: HTMLImageElement;
   try {
-    original = await decodeImage(sourceUrl);
+    image = await decodeImage(objectUrl);
   } catch {
-    URL.revokeObjectURL(sourceUrl);
+    URL.revokeObjectURL(objectUrl);
     throw new Error('Não foi possível ler essa imagem. Tente outro arquivo (JPG, PNG ou WebP).');
   }
+  return {
+    image,
+    objectUrl,
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+    dispose: () => URL.revokeObjectURL(objectUrl),
+  };
+}
 
-  const originalWidth = original.naturalWidth;
-  const originalHeight = original.naturalHeight;
-  const size = computeTargetSize(originalWidth, originalHeight);
-  const check = checkTargetSize(size.width, size.height);
-  if (!check.ok) {
-    URL.revokeObjectURL(sourceUrl);
-    throw new Error(check.reason);
-  }
-
+function createCanvas(width: number, height: number): { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D } {
   const canvas = document.createElement('canvas');
-  canvas.width = size.width;
-  canvas.height = size.height;
-  const context = canvas.getContext('2d');
-  if (!context) {
-    URL.revokeObjectURL(sourceUrl);
-    throw new Error('O navegador não conseguiu criar o canvas de preparo da imagem.');
-  }
+  canvas.width = width;
+  canvas.height = height;
+  // willReadFrequently: vamos ler os pixels de volta (getImageData) para realçar.
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('O navegador não conseguiu criar o canvas de preparo da imagem.');
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
-  context.drawImage(original, 0, 0, size.width, size.height);
-  URL.revokeObjectURL(sourceUrl);
+  return { canvas, context };
+}
+
+/** Recorta, reduz (se preciso) e realça a foto; devolve a imagem que será compilada. */
+export async function prepareTargetFromSource(
+  source: SourceImage,
+  options: PrepareOptions = {},
+): Promise<PreparedTarget> {
+  const crop = options.crop ?? null;
+  const enhance = options.enhance ?? 'none';
+  const box = rectToPixels(crop, source.width, source.height);
+  const size = computeTargetSize(box.w, box.h);
+  const check = checkTargetSize(size.width, size.height);
+  if (!check.ok) throw new Error(check.reason);
+
+  const { canvas, context } = createCanvas(size.width, size.height);
+  context.drawImage(source.image, box.x, box.y, box.w, box.h, 0, 0, size.width, size.height);
+  if (enhance !== 'none') {
+    const pixels = context.getImageData(0, 0, size.width, size.height);
+    applyEnhancement(pixels.data, size.width, size.height, enhance);
+    context.putImageData(pixels, 0, 0);
+  }
 
   const blob = await canvasToBlob(canvas);
   const objectUrl = URL.createObjectURL(blob);
@@ -123,11 +160,49 @@ export async function prepareTargetImage(file: Blob): Promise<PreparedTarget> {
     objectUrl,
     width: size.width,
     height: size.height,
-    originalWidth,
-    originalHeight,
+    originalWidth: source.width,
+    originalHeight: source.height,
     scale: size.scale,
+    enhance,
+    crop,
     dispose: () => URL.revokeObjectURL(objectUrl),
   };
+}
+
+/**
+ * Atalho para um arquivo só (usado na recompilação a partir da foto guardada,
+ * que já é a imagem recortada e realçada: por padrão não mexe em nada).
+ */
+export async function prepareTargetImage(file: Blob, options: PrepareOptions = {}): Promise<PreparedTarget> {
+  const source = await loadSourceImage(file);
+  try {
+    return await prepareTargetFromSource(source, options);
+  } finally {
+    source.dispose();
+  }
+}
+
+/** Prévia pequena do que o compilador vai receber (mesmo recorte e realce). */
+export function renderPreview(source: SourceImage, options: PrepareOptions, maxSide = 320): HTMLCanvasElement {
+  const box = rectToPixels(options.crop ?? null, source.width, source.height);
+  const size = computeTargetSize(box.w, box.h, maxSide);
+  const { canvas, context } = createCanvas(size.width, size.height);
+  context.drawImage(source.image, box.x, box.y, box.w, box.h, 0, 0, size.width, size.height);
+  if ((options.enhance ?? 'none') !== 'none') {
+    const pixels = context.getImageData(0, 0, size.width, size.height);
+    applyEnhancement(pixels.data, size.width, size.height, options.enhance ?? 'none');
+    context.putImageData(pixels, 0, 0);
+  }
+  return canvas;
+}
+
+/** Sugere a área da tatuagem (heurística simples; a pessoa confere e ajusta). */
+export function suggestCrop(source: SourceImage): NormalizedRect | null {
+  const size = computeTargetSize(source.width, source.height, 256);
+  const { context } = createCanvas(size.width, size.height);
+  context.drawImage(source.image, 0, 0, size.width, size.height);
+  const pixels = context.getImageData(0, 0, size.width, size.height);
+  return suggestCropBox(rgbaToLuma(pixels.data, size.width * size.height), size.width, size.height);
 }
 
 function decodeImage(url: string): Promise<HTMLImageElement> {

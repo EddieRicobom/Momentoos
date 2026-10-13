@@ -565,3 +565,102 @@ input {
   flex: none;
   accent-color: var(--accent);
 }
+
+/* ---------- Recorte e realce da foto ---------- */
+.crop-stage {
+  position: relative;
+  width: 100%;
+  /* A largura máxima é definida em JS a partir da proporção da foto, para o quadro
+     ter sempre o formato EXATO dela (sem barras): as coordenadas do recorte são
+     relativas ao quadro. */
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #000;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.crop-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+
+.crop-box {
+  position: absolute;
+  border: 2px solid var(--accent);
+  /* Escurece tudo que está fora da área escolhida. */
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
+  cursor: move;
+  touch-action: none;
+}
+
+.crop-handle {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  touch-action: none;
+}
+
+.crop-handle::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.crop-handle-nw { left: -14px; top: -14px; cursor: nwse-resize; }
+.crop-handle-ne { right: -14px; top: -14px; cursor: nesw-resize; }
+.crop-handle-sw { left: -14px; bottom: -14px; cursor: nesw-resize; }
+.crop-handle-se { right: -14px; bottom: -14px; cursor: nwse-resize; }
+.crop-handle-n { left: calc(50% - 14px); top: -14px; cursor: ns-resize; }
+.crop-handle-s { left: calc(50% - 14px); bottom: -14px; cursor: ns-resize; }
+.crop-handle-w { left: -14px; top: calc(50% - 14px); cursor: ew-resize; }
+.crop-handle-e { right: -14px; top: calc(50% - 14px); cursor: ew-resize; }
+
+.mode-list {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.mode-option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.mode-option:has(input:checked) {
+  border-color: var(--accent);
+}
+
+.mode-option input {
+  margin-top: 3px;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  accent-color: var(--accent);
+}
+
+.enhance-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 40vh;
+  margin: 0 auto;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #000;
+}

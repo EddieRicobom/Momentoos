@@ -97,3 +97,72 @@ Chromium bloqueado pela rede). Portanto **nunca foi executado**, em navegador re
 Todos esses itens estão no roteiro [TESTES-MANUAIS.md](TESTES-MANUAIS.md).
 Enquanto ele não for executado em um celular com uma tatuagem real, o rastreamento
 **não está validado**.
+
+## Preparo da imagem: recorte e contraste
+
+A foto passa por dois ajustes antes de virar alvo. **Nenhum deles foi medido em
+tatuagens reais**: são hipóteses fundamentadas no código do `mind-ar@1.2.5`
+(arquivos citados abaixo, dentro de `node_modules/mind-ar/src/image-target/`).
+Por isso o modo "Original" e a foto inteira continuam disponíveis, para
+comparar (roteiro: Parte 8 de [TESTES-MANUAIS.md](TESTES-MANUAIS.md)).
+
+### O que o MindAR faz por dentro (conferido no código)
+
+- **Cinza do alvo ≠ cinza da câmera.** O compilador converte a foto em cinza
+  pela média `(R+G+B)/3` (`compiler-base.js`). A câmera ao vivo é convertida
+  com `0,299·R + 0,587·G + 0,114·B` (`input-loader.js`). Em tinta preta sobre
+  pele a diferença é pequena; em tinta colorida (vermelho, azul) ela existe.
+- **Os pontos de interesse são distribuídos em grade.** O detector reparte a
+  imagem em 10×10 células e guarda até 5 pontos por célula
+  (`detector/detector.js`, `NUM_BUCKETS_PER_DIMENSION`, `MAX_FEATURES_PER_BUCKET`).
+  Células sobre pele lisa ou fundo gastam o orçamento de pontos fora da tatuagem.
+- **Os limiares de detecção são absolutos** (por exemplo `LAPLACIAN_THRESHOLD = 3`
+  e `SD_THRESH = 8`, em níveis de cinza 0–255). Foto lavada ou de baixo contraste
+  tende a render menos pontos. O rastreador (`tracker/extract.js`) escolhe os 2%
+  de maior gradiente, o que também depende do contraste.
+
+### O que o app faz
+
+1. **Recorte** na área da tatuagem, escolhido na tela (com sugestão automática
+   que procura tinta mais escura que a pele). Todas as células da grade passam
+   a cobrir a tatuagem. Consequência: o sistema de coordenadas do alvo passa a
+   ser o do **recorte**, não o da foto inteira (relevante para posicionar
+   conteúdo virtual, Etapa D), e, na câmera, a tatuagem precisa ser enquadrada
+   por inteiro, como o recorte.
+2. **Cinza com os pesos da câmera.** A imagem é convertida com 0,299/0,587/0,114
+   e salva com R=G=B; assim a média do compilador devolve exatamente esse cinza.
+3. **Contraste**, em três níveis:
+   - *Original*: nada é alterado.
+   - *Equilibrado* (pré-selecionado): cinza + esticamento linear por percentil
+     (1% e 99% viram 0 e 255). É global e não troca a ordem dos tons; imagem
+     quase lisa (faixa útil < 8 níveis) é deixada como está, para não amplificar
+     só ruído.
+   - *Forte*: além disso, CLAHE (equalização adaptativa com limite de contraste,
+     grade 8×8, limite 3). Realça traços finos, mas também textura de pele e
+     ruído, e é uma transformação local que afasta a imagem do que a câmera vê.
+     Tratado como experimental.
+
+### Por que não preto e branco puro
+
+Binarizar (cada pixel vira 0 ou 255) apaga os gradientes de que o detector
+(extremos de Laplaciano) e o rastreador (gradiente) dependem, cria bordas
+serrilhadas que a câmera não reproduz e desperdiça os tons intermediários do
+sombreado da tinta. "Contraste máximo" sem binarizar é o que o modo *Forte*
+aproxima. Se os testes mostrarem que vale a pena, dá para acrescentar.
+
+### Imagem guardada
+
+O projeto guarda a imagem **exatamente como foi compilada** (recortada e
+realçada), em PNG. Recompilar reproduz o mesmo alvo. A foto original não é
+guardada, o que também reduz a quantidade de imagem pessoal no aparelho e nos
+backups. Consequência: não dá para refazer o recorte depois; é preciso tirar
+a foto de novo.
+
+### O que ainda não existe
+
+- Ajuste do **rastreamento ao vivo** (tolerância a perdas, suavização). Os
+  valores atuais são os padrões do MindAR (`warmupTolerance = 5`,
+  `missTolerance = 5`, filtro One Euro).
+- Pré-processamento do **quadro da câmera**: o MindAR lê o vídeo direto, e
+  filtrá-lo antes custaria desempenho no celular.
+
