@@ -1,4 +1,4 @@
-import { applyControl, cloneItems, controlsFor, diffItems, formatValue, isDirty, moveItem, resetTransform, TYPE_LABEL, type Control } from '../scene/editorModel';
+import { CONTROLS, applyControl, cloneItems, controlsFor, diffItems, formatValue, isDirty, moveItem, resetTransform, TYPE_LABEL, type Control } from '../scene/editorModel';
 import { browserLoaders } from '../scene/loaders';
 import type { PreviewView } from '../scene/picking';
 import { SceneRuntime, type RuntimeSummary } from '../scene/runtime';
@@ -507,6 +507,14 @@ export const editorView: View = (context, root) => {
         const item = selected();
         if (item) replaceDraft(moveItem(item, x, y));
       },
+      getRotationZ: (id) => {
+        const item = draft.find((candidate) => candidate.id === id);
+        return item && item.type !== 'audio' ? item.transform.rotation[2] : null;
+      },
+      onRotate: (id, degrees) => {
+        const item = draft.find((candidate) => candidate.id === id);
+        if (item && item.type !== 'audio') replaceDraft(applyControl(item, CONTROLS.find((c) => c.id === 'rot-z')!, degrees));
+      },
     });
     if (stage) stage.attach(runtime);
     else {
@@ -529,7 +537,7 @@ export const editorView: View = (context, root) => {
           h(
             'p',
             { class: 'muted' },
-            'Toque num item para selecioná-lo e arraste para posicionar sobre a foto de referência. A foto é o alvo reconhecido na câmera; o centro dela é o centro do alvo.',
+            'Toque num item para selecioná-lo, arraste com um dedo para posicionar e gire dois dedos sobre a prévia para girar o item selecionado. A foto é o alvo reconhecido na câmera; o centro dela é o centro do alvo.',
           ),
           statusLine,
           problems,

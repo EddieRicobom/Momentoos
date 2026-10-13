@@ -298,6 +298,40 @@ describe('ajustar e salvar', () => {
     expect(root.querySelector('.save-bar')?.textContent).toMatch(/não salvas/);
   });
 
+  it('girar com dois dedos muda o giro do item selecionado, sincroniza o controle e vira alteração', async () => {
+    const repo = await freshRepository();
+    const { project, item } = await newProject(repo, true);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    const options = stages[0]!.options;
+    expect(options.getRotationZ(item!.id)).toBe(0);
+
+    options.onRotate(item!.id, 35);
+    expect(options.getRotationZ(item!.id)).toBe(35);
+    expect(slider(root, 'Giro (no plano do item)').value).toBe('35');
+    expect(root.querySelector('.save-bar')?.textContent).toMatch(/não salvas/);
+
+    button(root, 'Salvar').click();
+    await vi.waitFor(async () => {
+      if ((await savedItems(repo, project.id))[0]!.transform.rotation[2] !== 35) throw new Error('ainda não');
+    });
+  });
+
+  it('o giro por gesto respeita os limites e áudio não gira', async () => {
+    const repo = await freshRepository();
+    const { project, item } = await newProject(repo, true);
+    const audio = await addItem(repo, project.id, { file: { data: signedBytes('audio/mpeg'), fileName: 'a.mp3' } });
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    const options = stages[0]!.options;
+    options.onRotate(item!.id, 400);
+    expect(options.getRotationZ(item!.id)).toBe(180);
+    expect(options.getRotationZ(audio.item.id)).toBeNull();
+    options.onRotate(audio.item.id, 10);
+    expect(root.querySelector('.save-bar')?.textContent).toMatch(/não salvas/); // só pelo item de imagem
+    expect(root.textContent).toMatch(/gire dois dedos/);
+  });
+
   it('tocar num item na prévia seleciona; tocar no vazio desmarca', async () => {
     const repo = await freshRepository();
     const { project } = await newProject(repo, true);

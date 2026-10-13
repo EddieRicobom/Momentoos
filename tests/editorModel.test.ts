@@ -10,7 +10,7 @@ import {
   moveItem,
   resetTransform,
 } from '../src/scene/editorModel';
-import { TILT_DEGREES, cameraPose, rayHitsPlane } from '../src/scene/picking';
+import { TILT_DEGREES, cameraPose, pointerAngleDeg, pointerDistance, rayHitsPlane, twistedRotation, wrapDegrees } from '../src/scene/picking';
 import { defaultOptions, defaultTransform, parseProjectRecord, type ItemType, type SceneItem } from '../src/storage/model';
 import { makeRecord } from './helpers';
 
@@ -219,5 +219,41 @@ describe('cameraPose', () => {
 
   it('proporções inválidas caem em 1', () => {
     expect(cameraPose('front', 0, Number.NaN).position[2]).toBeCloseTo(cameraPose('front', 1, 1).position[2]);
+  });
+});
+
+describe('gesto de dois dedos', () => {
+  it('ângulo entre os dedos em coordenadas de tela', () => {
+    expect(pointerAngleDeg({ x: 0, y: 0 }, { x: 10, y: 0 })).toBeCloseTo(0);
+    expect(pointerAngleDeg({ x: 0, y: 0 }, { x: 0, y: 10 })).toBeCloseTo(90); // y para baixo
+    expect(pointerAngleDeg({ x: 0, y: 0 }, { x: -10, y: 0 })).toBeCloseTo(180);
+    expect(pointerDistance({ x: 0, y: 0 }, { x: 3, y: 4 })).toBe(5);
+  });
+
+  it('wrapDegrees leva para (-180, 180]', () => {
+    expect(wrapDegrees(190)).toBe(-170);
+    expect(wrapDegrees(-190)).toBe(170);
+    expect(wrapDegrees(180)).toBe(180);
+    expect(wrapDegrees(-180)).toBe(180);
+    expect(wrapDegrees(720)).toBe(0);
+    expect(wrapDegrees(Number.NaN)).toBe(0);
+  });
+
+  it('girar os dedos no sentido horário diminui o giro do item; anti-horário aumenta', () => {
+    // dedos na horizontal (0°) viram para baixo (90°): horário na tela
+    expect(twistedRotation(0, 0, 90)).toBe(-90);
+    expect(twistedRotation(0, 90, 0)).toBe(90);
+    expect(twistedRotation(30, 10, 25)).toBe(15);
+  });
+
+  it('parte do giro que o item já tinha e dá a volta sem saltos', () => {
+    expect(twistedRotation(170, 0, -20)).toBe(-170); // 170 + 20 = 190 → -170
+    // cruzar -180/180 no ângulo dos dedos não faz o item pular
+    expect(twistedRotation(0, 170, -170)).toBe(-20);
+    expect(twistedRotation(0, -170, 170)).toBe(20);
+  });
+
+  it('sem movimento, o giro não muda', () => {
+    expect(twistedRotation(45, 33, 33)).toBe(45);
   });
 });
