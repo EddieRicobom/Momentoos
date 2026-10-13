@@ -77,7 +77,7 @@ export interface ItemOptions {
   volume: number;
   /** Modelo: tocar as animações. */
   animate: boolean;
-  /** Modelo: nome da animação a tocar; null = todas. */
+  /** Modelo: nome da animação a tocar; null = a primeira do arquivo. */
   clip: string | null;
 }
 

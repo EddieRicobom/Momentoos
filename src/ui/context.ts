@@ -27,7 +27,7 @@ export interface AppTarget {
   note?: string | null;
 }
 
-export type ViewName = 'home' | 'create' | 'camera' | 'settings' | 'projects' | 'import' | 'export';
+export type ViewName = 'home' | 'create' | 'camera' | 'settings' | 'projects' | 'import' | 'export' | 'editor';
 
 export interface AppContext {
   store: TrackingStore;
@@ -36,6 +36,9 @@ export interface AppContext {
   setTarget(target: AppTarget | null): void;
   /** Abre o banco local na primeira chamada e reaproveita a conexão depois. */
   getRepository(): Promise<ProjectRepository>;
+  /** Projeto aberto no editor de itens (definido antes de navegar para 'editor'). */
+  getEditingProject(): string | null;
+  setEditingProject(id: string | null): void;
   navigate(view: ViewName): void;
   toast(message: string): void;
 }

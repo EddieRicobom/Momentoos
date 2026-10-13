@@ -63,6 +63,8 @@ async function mount(appTarget: AppTarget, getRepository: () => Promise<ProjectR
     getTarget: () => appTarget,
     setTarget: () => {},
     getRepository,
+    getEditingProject: () => null,
+    setEditingProject: () => {},
     navigate: () => {},
     toast: () => {},
   };

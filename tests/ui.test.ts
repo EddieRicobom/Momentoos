@@ -84,6 +84,7 @@ interface Harness {
   root: HTMLElement;
   repo: ProjectRepository;
   navigations: ViewName[];
+  editing: { id: string | null };
   targets: Array<AppTarget | null>;
   cleanup: () => void;
 }
@@ -118,6 +119,7 @@ async function mount(
   const repository = repo ?? (await freshRepository());
   const navigations: ViewName[] = [];
   const targets: Array<AppTarget | null> = [];
+  const editing: { id: string | null } = { id: null };
   let target = initialTarget;
   const context: AppContext = {
     store: createTrackingStore(),
@@ -127,6 +129,10 @@ async function mount(
       targets.push(next);
     },
     getRepository: async () => repository,
+    getEditingProject: () => editing.id,
+    setEditingProject: (id) => {
+      editing.id = id;
+    },
     navigate: (name) => {
       navigations.push(name);
     },
@@ -135,7 +141,7 @@ async function mount(
   const root = document.createElement('div');
   document.body.appendChild(root);
   const cleanup = view(context, root);
-  return { context, root, repo: repository, navigations, targets, cleanup };
+  return { context, root, repo: repository, navigations, editing, targets, cleanup };
 }
 
 function button(root: HTMLElement, label: string | RegExp): HTMLButtonElement {
@@ -199,6 +205,25 @@ describe('Meus projetos', () => {
     expect(target.buffer).toEqual(makeMind({ seed: 1, filler: 200 }));
     expect(target).toMatchObject({ origin: 'project', projectId: record.id, label: 'Braço', width: 640, height: 480 });
     expect(h.context.store.getState().status).toBe('target-ready');
+  });
+
+  it('"Adicionar itens" guarda o projeto escolhido e abre o editor; com itens o botão mostra a contagem', async () => {
+    const repo = await freshRepository();
+    const record = await addProject(repo, 'Braço', 1);
+    const h = await mount(projectsView, repo);
+    await until(() => hasButton(h.root, 'Adicionar itens'));
+
+    button(h.root, 'Adicionar itens').click();
+    expect(h.editing.id).toBe(record.id);
+    expect(h.navigations).toEqual(['editor']);
+    h.cleanup();
+
+    const { addItem } = await import('../src/storage/scene');
+    const { signedBytes } = await import('./helpers');
+    await addItem(repo, record.id, { file: { data: signedBytes('image/png'), fileName: 'a.png' } });
+    await addItem(repo, record.id, { file: { data: signedBytes('image/png', 64, 2), fileName: 'b.png' } });
+    const again = await mount(projectsView, repo);
+    await until(() => hasButton(again.root, 'Editar itens (2)'));
   });
 
   it('alvo corrompido: avisa, NÃO abre a câmera e oferece recompilar a partir da foto', async () => {

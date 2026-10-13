@@ -27,7 +27,8 @@ function makeItem(id: string, type: ItemType = 'image', patch: Partial<SceneItem
   };
 }
 
-interface Fake extends ItemController {
+interface Fake extends Omit<ItemController, "clips"> {
+  clips?: readonly string[];
   calls: string[];
   opacity: number | null;
   active: boolean | null;
@@ -354,5 +355,68 @@ describe('describeModelError', () => {
 
   it('valor que não é Error também é traduzido', () => {
     expect(describeModelError('qualquer coisa')).toMatch(/GLB/);
+  });
+});
+
+describe('SceneRuntime: edição de itens (add / remove / seleção)', () => {
+  it('add carrega um item novo depois da montagem e remove o libera', async () => {
+    const { runtime, fakes } = setup([makeItem('a')]);
+    await runtime.load();
+    await runtime.add(makeItem('b', 'video'));
+    expect(runtime.summary()).toMatchObject({ total: 2, ready: 2 });
+    expect(runtime.rootOf('b')).not.toBeNull();
+
+    runtime.remove('b');
+    expect(runtime.summary().total).toBe(1);
+    expect(runtime.rootOf('b')).toBeNull();
+    expect(fakes.get('b')!.calls).toContain('dispose');
+    expect(runtime.group.children.some((c) => c.userData.itemId === 'b')).toBe(false);
+  });
+
+  it('add de id já existente é ignorado; add depois de dispose também', async () => {
+    const { runtime, fakes } = setup([makeItem('a')]);
+    await runtime.load();
+    await runtime.add(makeItem('a'));
+    expect(runtime.summary().total).toBe(1);
+    runtime.dispose();
+    await runtime.add(makeItem('z'));
+    expect(fakes.has('z')).toBe(false);
+  });
+
+  it('item adicionado com a reprodução ligada já começa tocando', async () => {
+    const { runtime, fakes } = setup([makeItem('a')]);
+    await runtime.load();
+    await runtime.setTracking(true);
+    await runtime.add(makeItem('b', 'video'));
+    expect(fakes.get('b')!.active).toBe(true);
+  });
+
+  it('remove de id desconhecido não faz nada', async () => {
+    const { runtime } = setup([makeItem('a')]);
+    await runtime.load();
+    expect(() => runtime.remove('zzz')).not.toThrow();
+    expect(runtime.summary().total).toBe(1);
+  });
+
+  it('itemIdOf acha o item a partir de qualquer objeto dentro dele', async () => {
+    const { runtime, fakes } = setup([makeItem('a'), makeItem('b')]);
+    await runtime.load();
+    expect(runtime.itemIdOf(fakes.get('a')!.object!)).toBe('a');
+    expect(runtime.itemIdOf(fakes.get('b')!.object!)).toBe('b');
+    expect(runtime.itemIdOf(new THREE.Object3D())).toBeNull();
+    expect(runtime.itemIdOf(null)).toBeNull();
+    runtime.remove('a');
+    expect(runtime.itemIdOf(fakes.get('a')!.object!)).toBeNull();
+  });
+
+  it('rootOf só existe para item pronto; clipsOf vem do controlador', async () => {
+    const model = makeFake('model', { clips: ['Andar', 'Correr'] });
+    const { runtime } = setup([makeItem('m', 'model'), makeItem('bad')], { fakes: new Map([['m', model]]), fail: new Set(['bad']) });
+    await runtime.load();
+    expect(runtime.rootOf('m')).not.toBeNull();
+    expect(runtime.rootOf('bad')).toBeNull();
+    expect(runtime.rootOf('nada')).toBeNull();
+    expect(runtime.clipsOf('m')).toEqual(['Andar', 'Correr']);
+    expect(runtime.clipsOf('bad')).toEqual([]);
   });
 });

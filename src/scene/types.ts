@@ -11,6 +11,8 @@ export interface ItemController {
   readonly object: THREE.Object3D | null;
   /** Aviso a mostrar ao usuário (ex.: GIF sem animação neste navegador). */
   readonly note?: string;
+  /** Nomes das animações do modelo (só modelos 3D). */
+  readonly clips?: readonly string[];
   /** Precisa de um toque do usuário para tocar (política de autoplay do navegador). */
   readonly blocked: boolean;
   /** Tatuagem reconhecida (true) ou perdida (false): toca ou pausa a mídia. */
