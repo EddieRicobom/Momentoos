@@ -1,10 +1,62 @@
 import { checkCapabilities } from '../capabilities';
+import { getStorageInfo, requestPersistence, type StorageInfo } from '../storage/storageInfo';
 import { topBar } from './components';
 import type { View } from './context';
-import { h } from './dom';
+import { formatBytes, h } from './dom';
 
 export const settingsView: View = (context, root) => {
   const capabilities = checkCapabilities();
+  let disposed = false;
+
+  const usageLine = h('p', { class: 'muted' }, 'Verificando o uso de armazenamento…');
+  const persistLine = h('p', { class: 'muted' });
+  const persistResult = h('p', { class: 'muted', role: 'status' });
+  persistResult.hidden = true;
+  const persistButton = h(
+    'button',
+    { class: 'btn', type: 'button', onclick: () => void askPersistence() },
+    'Pedir armazenamento persistente',
+  );
+  persistButton.hidden = true;
+
+  function showInfo(info: StorageInfo): void {
+    if (disposed) return;
+    usageLine.textContent =
+      info.usage !== null && info.quota !== null
+        ? `Este app usa cerca de ${formatBytes(info.usage)} de aproximadamente ${formatBytes(info.quota)} que o navegador permite (valores estimados pelo próprio navegador).`
+        : 'O navegador não informa o uso de armazenamento.';
+    if (info.persisted === true) {
+      persistLine.textContent =
+        'Armazenamento persistente: concedido. O navegador não deve apagar os dados por falta de espaço, mas você ainda pode limpá-los manualmente.';
+    } else if (info.persisted === false) {
+      persistLine.textContent =
+        'Armazenamento persistente: não concedido. Em caso de pouco espaço, o navegador pode apagar os dados deste site sem avisar.';
+    } else {
+      persistLine.textContent = 'Este navegador não informa se o armazenamento é persistente.';
+    }
+    persistButton.hidden = !(info.canRequestPersistence && info.persisted !== true);
+  }
+
+  async function askPersistence(): Promise<void> {
+    persistButton.disabled = true;
+    const result = await requestPersistence();
+    if (disposed) return;
+    persistResult.hidden = false;
+    if (result.status === 'granted') {
+      persistResult.textContent = 'O navegador concedeu o armazenamento persistente.';
+    } else if (result.status === 'denied') {
+      persistResult.textContent =
+        'O navegador não concedeu. Isso é decisão dele e pode mudar com o uso do app (por exemplo, depois de instalá-lo na tela inicial). Continue fazendo backups.';
+    } else if (result.status === 'unsupported') {
+      persistResult.textContent = 'Este navegador não permite pedir armazenamento persistente.';
+    } else {
+      persistResult.textContent = `Não foi possível pedir: ${result.message}`;
+    }
+    persistButton.disabled = false;
+    showInfo(await getStorageInfo());
+  }
+
+  void getStorageInfo().then(showInfo);
 
   root.append(
     h(
@@ -65,11 +117,23 @@ export const settingsView: View = (context, root) => {
         h(
           'p',
           { class: 'muted' },
-          'Limpar os dados do navegador ou desinstalar o app apaga o que estiver guardado aqui. Quando os projetos passarem a ser salvos (Etapa C), exporte backups com frequência. Por enquanto, baixe o alvo .mind em "Criar âncora" se quiser guardá-lo.',
+          'Os projetos ficam no armazenamento local deste navegador (IndexedDB). Limpar os dados do navegador ou do site, ou desinstalar o app, apaga tudo. Exporte um backup de vez em quando.',
+        ),
+        usageLine,
+        persistLine,
+        persistButton,
+        persistResult,
+        h(
+          'div',
+          { class: 'row' },
+          h('button', { class: 'btn', type: 'button', onclick: () => context.navigate('export') }, 'Exportar backup'),
+          h('button', { class: 'btn', type: 'button', onclick: () => context.navigate('import') }, 'Importar backup'),
         ),
       ),
     ),
   );
 
-  return () => {};
+  return () => {
+    disposed = true;
+  };
 };

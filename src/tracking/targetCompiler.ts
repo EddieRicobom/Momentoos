@@ -1,10 +1,7 @@
 import { Compiler } from 'mind-ar/src/image-target/compiler.js';
+import { MIND_FORMAT_VERSION } from './mindFormat';
 
-/**
- * Versão do formato .mind produzida/aceita pelo mind-ar@1.2.5
- * (constante CURRENT_VERSION em src/image-target/compiler-base.js).
- */
-export const MIND_FORMAT_VERSION = 2;
+export { MIND_FORMAT_VERSION };
 
 export interface CompiledTarget {
   /** Conteúdo do .mind (MessagePack). Pode ser salvo e recarregado sem recompilar. */

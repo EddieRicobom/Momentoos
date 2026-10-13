@@ -1,5 +1,8 @@
 import { defineConfig } from 'vite';
 import basicSsl from '@vitejs/plugin-basic-ssl';
+import { readFileSync } from 'node:fs';
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8')) as { version: string };
 
 // `npm run dev:https` usa --mode https: sobe o servidor com certificado
 // autoassinado para que o celular, acessando pelo IP da rede local, tenha um
@@ -8,6 +11,8 @@ export default defineConfig(({ mode }) => ({
   // Caminhos relativos: o build funciona em https://<usuario>.github.io/<repo>/
   // sem precisar saber o nome do repositório.
   base: './',
+  // Versão do app gravada nos backups (só informativa; nada é enviado a lugar nenhum).
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: mode === 'https' ? [basicSsl()] : [],
   optimizeDeps: {
     // O mind-ar é consumido pelo código-fonte (src/**), que usa as sintaxes

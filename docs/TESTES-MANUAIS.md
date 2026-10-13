@@ -1,4 +1,4 @@
-# Roteiro de testes manuais (Etapa B)
+# Roteiro de testes manuais (Etapas B e C)
 
 Estes testes precisam de um celular e de uma tatuagem real. Nenhum deles foi
 executado ainda. Preencha a coluna **Resultado** conforme for testando: o que
@@ -89,6 +89,38 @@ Para cada linha, anote se reconheceu, se manteve, e a qualidade do alinhamento
 | 6.4 | Deixar outro app usando a câmera e abrir a câmera do app | "Câmera indisponível" (ou comportamento equivalente; anote) | |
 | 6.5 | Tocar "Parar e voltar" e abrir a câmera de novo várias vezes | Sem travar; contadores zerados a cada sessão. Anote se o desempenho piora | |
 
+## Parte 7: Projetos salvos e backup (Etapa C)
+
+Estes testes verificam o que os testes automatizados **não** conseguem: o
+IndexedDB, o download e a escolha de arquivos do navegador real. Use um projeto
+criado a partir de uma tatuagem (ou de qualquer foto, se só quiser testar
+armazenamento; para validar **rastreamento**, continue valendo a Parte 3 com
+tatuagem real).
+
+| # | Passo | Esperado | Resultado |
+|---|---|---|---|
+| 7.1 | Em "Criar âncora", compile uma foto, dê um nome e toque "Salvar projeto" | Aviso "Salvo neste aparelho"; o botão some | |
+| 7.2 | Feche a aba/app por completo e abra de novo; vá em "Meus projetos" | O projeto aparece com miniatura, nome, data e situação "Pronto" | |
+| 7.3 | Toque "Abrir câmera" no projeto | Abre sem recompilar (sem barra de progresso de compilação) e segue o fluxo da Parte 3 | |
+| 7.4 | Reinicie o celular e repita 7.2 e 7.3 | Igual; anote se o projeto sumiu | |
+| 7.5 | Renomeie o projeto (inclusive com acentos) | Novo nome aparece e persiste após recarregar | |
+| 7.6 | Tente renomear com o nome em branco | Mensagem de erro; nome antigo mantido | |
+| 7.7 | Em "Criar âncora", carregue um `.mind` baixado antes e salve como projeto | Salva; o aviso diz que não será possível recompilar (sem foto) | |
+| 7.8 | Toque "Exportar" em um projeto | Baixa um `.tattoo-ar.zip`; anote onde ele foi parar e o tamanho | |
+| 7.9 | Em "Exportar backup", marque só alguns projetos e gere | O ZIP contém só os marcados; o aviso de que não é criptografado aparece | |
+| 7.10 | Abra o ZIP em um computador | Contém `manifest.json` e `projects/<id>/{project.json, anchor.mind, reference-image.*}` | |
+| 7.11 | Exclua um projeto (confirme) e importe o ZIP em "Importar projeto" | Projeto volta; "Abrir câmera" funciona sem recompilar | |
+| 7.12 | Importe o mesmo ZIP de novo | Informa que já existe; nada é duplicado | |
+| 7.13 | Em outro aparelho/navegador, importe o ZIP | Projeto aparece e abre a câmera | |
+| 7.14 | Escolha um arquivo qualquer que não é backup (ex.: uma foto renomeada para `.zip`) | Mensagem de erro clara; nada é salvo | |
+| 7.15 | "Configurações" → armazenamento | Mostra uso e cota estimados; anote os valores | |
+| 7.16 | Toque "Pedir armazenamento persistente" | Mostra concedido ou não concedido (anote qual); o texto não promete segurança | |
+| 7.17 | Salve vários projetos (ex.: 5–10) e abra "Meus projetos" | Lista carrega sem travar; anote o tempo percebido e o uso de armazenamento | |
+| 7.18 | Exclua um projeto e confira o uso de armazenamento | O uso tende a diminuir (a estimativa do navegador é aproximada e pode demorar a refletir; anote o que viu) | |
+
+Anote também: no Android, se o ZIP baixado abre no gerenciador de arquivos e se
+o seletor de arquivos da importação enxerga a pasta de downloads.
+
 ## Critérios propostos para considerar o rastreamento validado
 
 **Proposta para sua aprovação, não uma regra estabelecida.** O rastreamento só
@@ -99,6 +131,10 @@ deve ser dado como validado se, em pelo menos uma tatuagem real:
 3. 3.4 passa (acompanha o movimento sem escorregar de forma grave);
 4. 4.1 a 4.3 passam (perde, avisa e recupera);
 5. as condições da Parte 5 ficam documentadas, inclusive as que falharam.
+
+A Parte 7 (projetos salvos e backup) é independente: ela valida a
+**persistência**, não o rastreamento. Passar nela não valida o rastreamento, e
+vice-versa.
 
 Falhas na Parte 5 (por exemplo, curvatura) não impedem a validação, mas precisam
 constar na documentação como limitação.
