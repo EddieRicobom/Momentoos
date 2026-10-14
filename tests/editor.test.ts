@@ -317,6 +317,25 @@ describe('ajustar e salvar', () => {
     });
   });
 
+  it('a pinça muda o tamanho do item selecionado, com limites, e áudio não muda', async () => {
+    const repo = await freshRepository();
+    const { project, item } = await newProject(repo, true);
+    const audio = await addItem(repo, project.id, { file: { data: signedBytes('audio/mpeg'), fileName: 'a.mp3' } });
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    const options = stages[0]!.options;
+    expect(options.getScale(item!.id)).toBe(1);
+    options.onScale(item!.id, 2.5);
+    expect(options.getScale(item!.id)).toBe(2.5);
+    expect(slider(root, 'Tamanho').value).toBe('2.5');
+    options.onScale(item!.id, 99);
+    expect(options.getScale(item!.id)).toBe(5);
+    options.onScale(item!.id, 0);
+    expect(options.getScale(item!.id)).toBe(0.05);
+    expect(options.getScale(audio.item.id)).toBeNull();
+    expect(root.textContent).toMatch(/mudar o tamanho/);
+  });
+
   it('o giro por gesto respeita os limites e áudio não gira', async () => {
     const repo = await freshRepository();
     const { project, item } = await newProject(repo, true);
@@ -329,7 +348,7 @@ describe('ajustar e salvar', () => {
     expect(options.getRotationZ(audio.item.id)).toBeNull();
     options.onRotate(audio.item.id, 10);
     expect(root.querySelector('.save-bar')?.textContent).toMatch(/não salvas/); // só pelo item de imagem
-    expect(root.textContent).toMatch(/gire dois dedos/);
+    expect(root.textContent).toMatch(/dois dedos sobre a prévia/);
   });
 
   it('tocar num item na prévia seleciona; tocar no vazio desmarca', async () => {

@@ -10,7 +10,7 @@ import {
   moveItem,
   resetTransform,
 } from '../src/scene/editorModel';
-import { TILT_DEGREES, cameraPose, pointerAngleDeg, pointerDistance, rayHitsPlane, twistedRotation, wrapDegrees } from '../src/scene/picking';
+import { TILT_DEGREES, cameraPose, pointerAngleDeg, pinchedScale, pointerDistance, rayHitsPlane, twistedRotation, wrapDegrees } from '../src/scene/picking';
 import { defaultOptions, defaultTransform, parseProjectRecord, type ItemType, type SceneItem } from '../src/storage/model';
 import { makeRecord } from './helpers';
 
@@ -255,5 +255,28 @@ describe('gesto de dois dedos', () => {
 
   it('sem movimento, o giro não muda', () => {
     expect(twistedRotation(45, 33, 33)).toBe(45);
+  });
+});
+
+describe('pinchedScale', () => {
+  it('proporcional à distância entre os dedos', () => {
+    expect(pinchedScale(1, 100, 200)).toBe(2);
+    expect(pinchedScale(2, 100, 50)).toBe(1);
+    expect(pinchedScale(1.5, 80, 80)).toBe(1.5);
+  });
+
+  it('entradas inválidas mantêm o tamanho', () => {
+    expect(pinchedScale(1, 0, 50)).toBe(1);
+    expect(pinchedScale(1, Number.NaN, 50)).toBe(1);
+    expect(pinchedScale(1, 100, Number.NaN)).toBe(1);
+    expect(pinchedScale(1, 100, -5)).toBe(1);
+  });
+
+  it('o resultado passa pelo limite do controle de tamanho', () => {
+    const scale = CONTROLS.find((c) => c.id === 'scale')!;
+    const huge = applyControl(item('a'), scale, pinchedScale(1, 10, 1000));
+    expect(huge.transform.scale).toBe(5);
+    const tiny = applyControl(item('a'), scale, pinchedScale(1, 1000, 1));
+    expect(tiny.transform.scale).toBe(0.05);
   });
 });

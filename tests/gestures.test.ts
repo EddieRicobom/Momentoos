@@ -5,6 +5,7 @@ import type { Point } from '../src/scene/picking';
 /** Dois itens: "a" perto de (0,0) e "b" perto de (100,0); o resto da tela é vazio. */
 function setup(options: { selected?: string | null; rotations?: Record<string, number | null> } = {}) {
   const log: string[] = [];
+  const scales: string[] = [];
   let selected: string | null = options.selected === undefined ? null : options.selected;
   const rotations: Record<string, number | null> = { a: 0, b: 40, audio: null, ...options.rotations };
   const host: GestureHost = {
@@ -17,8 +18,10 @@ function setup(options: { selected?: string | null; rotations?: Record<string, n
     selectedId: () => selected,
     rotationZ: (id) => rotations[id] ?? null,
     rotate: (id, deg) => log.push(`rotate:${id}:${Math.round(deg)}`),
+    scaleOf: (id) => (id === 'a' ? 1 : id === 'b' ? 2 : null),
+    rescale: (id, value) => scales.push(`${id}:${value.toFixed(2)}`),
   };
-  return { tracker: new GestureTracker(host), log, selected: () => selected };
+  return { tracker: new GestureTracker(host), log, scales, selected: () => selected };
 }
 
 describe('um dedo', () => {
@@ -178,5 +181,113 @@ describe('dois dedos', () => {
     tracker.down(3, { x: 0, y: 0 });
     expect(log).not.toContain('select:a');
     expect(log).toEqual([]);
+  });
+});
+
+describe('pinça (tamanho)', () => {
+  it('afastar os dedos aumenta o tamanho na mesma proporção; aproximar diminui', () => {
+    const { tracker, scales } = setup({ selected: 'a' }); // a tem tamanho 1
+    tracker.down(1, { x: 300, y: 300 });
+    tracker.down(2, { x: 400, y: 300 }); // distância 100
+    tracker.move(2, { x: 500, y: 300 }); // 200 → dobra
+    tracker.move(2, { x: 350, y: 300 }); // 50 → metade
+    expect(scales).toEqual(['a:2.00', 'a:0.50']);
+  });
+
+  it('parte do tamanho que o item já tinha', () => {
+    const { tracker, scales } = setup({ selected: 'b' }); // b tem tamanho 2
+    tracker.down(1, { x: 300, y: 300 });
+    tracker.down(2, { x: 400, y: 300 });
+    tracker.move(2, { x: 450, y: 300 }); // 1,5×
+    expect(scales).toEqual(['b:3.00']);
+  });
+
+  it('girar e afastar ao mesmo tempo atualiza giro e tamanho', () => {
+    const { tracker, log, scales } = setup({ selected: 'a' });
+    tracker.down(1, { x: 300, y: 300 });
+    tracker.down(2, { x: 400, y: 300 });
+    tracker.move(2, { x: 300, y: 500 }); // 90° na tela e distância 200
+    expect(log).toEqual(['rotate:a:-90']);
+    expect(scales).toEqual(['a:2.00']);
+  });
+
+  it('só girar (mesma distância) não muda o tamanho além do mesmo valor', () => {
+    const { tracker, scales } = setup({ selected: 'a' });
+    tracker.down(1, { x: 300, y: 300 });
+    tracker.down(2, { x: 400, y: 300 });
+    tracker.move(2, { x: 300, y: 400 });
+    expect(scales).toEqual(['a:1.00']);
+  });
+
+  it('soltar um dedo encerra a pinça; o dedo que sobra não muda o tamanho', () => {
+    const { tracker, scales } = setup({ selected: 'a' });
+    tracker.down(1, { x: 300, y: 300 });
+    tracker.down(2, { x: 400, y: 300 });
+    tracker.up(2);
+    tracker.move(1, { x: 900, y: 900 });
+    expect(scales).toEqual([]);
+  });
+
+  it('um novo gesto parte do tamanho do momento, não do início do anterior', () => {
+    let current = 1;
+    const log: string[] = [];
+    const tracker = new GestureTracker({
+      pick: () => null,
+      select: () => {},
+      startDrag: () => null,
+      selectedId: () => 'a',
+      rotationZ: () => 0,
+      rotate: () => {},
+      scaleOf: () => current,
+      rescale: (_id, value) => {
+        current = value;
+        log.push(value.toFixed(2));
+      },
+    });
+    tracker.down(1, { x: 0, y: 0 });
+    tracker.down(2, { x: 100, y: 0 });
+    tracker.move(2, { x: 200, y: 0 }); // 2×
+    tracker.up(2);
+    tracker.up(1);
+    tracker.down(3, { x: 0, y: 0 });
+    tracker.down(4, { x: 100, y: 0 });
+    tracker.move(4, { x: 150, y: 0 }); // 1,5× de 2
+    expect(log).toEqual(['2.00', '3.00']);
+  });
+
+  it('item sem giro mas com tamanho (hipotético) ainda faz pinça; sem os dois, nada', () => {
+    const { tracker, scales } = setup({ selected: 'audio' }); // audio: rotationZ e scaleOf null
+    tracker.down(1, { x: 300, y: 300 });
+    tracker.down(2, { x: 400, y: 300 });
+    tracker.move(2, { x: 500, y: 300 });
+    expect(scales).toEqual([]);
+  });
+});
+
+describe('itens que só aceitam um dos dois ajustes', () => {
+  function custom(rotation: number | null, scale: number | null) {
+    const calls: string[] = [];
+    const tracker = new GestureTracker({
+      pick: () => null,
+      select: () => {},
+      startDrag: () => null,
+      selectedId: () => 'x',
+      rotationZ: () => rotation,
+      rotate: () => calls.push('rotate'),
+      scaleOf: () => scale,
+      rescale: () => calls.push('rescale'),
+    });
+    tracker.down(1, { x: 0, y: 0 });
+    tracker.down(2, { x: 100, y: 0 });
+    tracker.move(2, { x: 0, y: 200 });
+    return calls;
+  }
+
+  it('só giro: não chama o tamanho', () => {
+    expect(custom(0, null)).toEqual(['rotate']);
+  });
+
+  it('só tamanho: não chama o giro', () => {
+    expect(custom(null, 1)).toEqual(['rescale']);
   });
 });

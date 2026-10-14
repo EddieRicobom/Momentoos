@@ -1,11 +1,11 @@
-import { MIN_TWIST_DISTANCE, pointerAngleDeg, pointerDistance, twistedRotation, type Point } from './picking';
+import { MIN_TWIST_DISTANCE, pinchedScale, pointerAngleDeg, pointerDistance, twistedRotation, type Point } from './picking';
 
 /**
  * Máquina de gestos da prévia, sem DOM nem WebGL (testável em Node):
  *
  *  - 1 dedo sobre um item: seleciona e arrasta;
  *  - 1 dedo em área vazia: desmarca ao soltar (se não andou);
- *  - 2 dedos: giram o item selecionado. O segundo dedo pode cair em qualquer
+ *  - 2 dedos: giram (torcer) e redimensionam (afastar/aproximar) o item selecionado. O segundo dedo pode cair em qualquer
  *    lugar (inclusive no vazio) e NÃO desmarca nem seleciona nada;
  *  - ao soltar um dos dois dedos o giro acaba, e o dedo que sobra não vira
  *    arrasto (evita saltos).
@@ -21,6 +21,9 @@ export interface GestureHost {
   /** Giro Z atual do item, ou null se ele não puder girar. */
   rotationZ(id: string): number | null;
   rotate(id: string, degrees: number): void;
+  /** Tamanho atual (escala) do item, ou null se ele não puder ser redimensionado. */
+  scaleOf(id: string): number | null;
+  rescale(id: string, scale: number): void;
 }
 
 const TAP_SLOP_PX = 8;
@@ -28,7 +31,13 @@ const TAP_SLOP_PX = 8;
 export class GestureTracker {
   private readonly pointers = new Map<number, Point>();
   private drag: { pointerId: number; move(point: Point): void } | null = null;
-  private twist: { id: string; startAngle: number; startRotation: number } | null = null;
+  private twist: {
+    id: string;
+    startAngle: number;
+    startRotation: number | null;
+    startDistance: number;
+    startScale: number | null;
+  } | null = null;
   private emptyTap: { pointerId: number; origin: Point } | null = null;
 
   constructor(private readonly host: GestureHost) {}
@@ -64,7 +73,9 @@ export class GestureTracker {
     if (this.twist) {
       const pair = this.pair();
       if (pair && pointerDistance(...pair) >= MIN_TWIST_DISTANCE) {
-        this.host.rotate(this.twist.id, twistedRotation(this.twist.startRotation, this.twist.startAngle, pointerAngleDeg(...pair)));
+        const { id, startAngle, startRotation, startDistance, startScale } = this.twist;
+        if (startRotation !== null) this.host.rotate(id, twistedRotation(startRotation, startAngle, pointerAngleDeg(...pair)));
+        if (startScale !== null) this.host.rescale(id, pinchedScale(startScale, startDistance, pointerDistance(...pair)));
       }
       return;
     }
@@ -92,8 +103,9 @@ export class GestureTracker {
     const id = this.host.selectedId();
     const pair = this.pair();
     if (!id || !pair || pointerDistance(...pair) < MIN_TWIST_DISTANCE) return;
-    const rotation = this.host.rotationZ(id);
-    if (rotation === null) return;
-    this.twist = { id, startAngle: pointerAngleDeg(...pair), startRotation: rotation };
+    const startRotation = this.host.rotationZ(id);
+    const startScale = this.host.scaleOf(id);
+    if (startRotation === null && startScale === null) return;
+    this.twist = { id, startAngle: pointerAngleDeg(...pair), startRotation, startDistance: pointerDistance(...pair), startScale };
   }
 }
