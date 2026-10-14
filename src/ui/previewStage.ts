@@ -7,7 +7,7 @@ import type { SceneRuntime } from '../scene/runtime';
  * Prévia 3D do editor: a foto de referência (o alvo, 1 unidade de largura) num
  * plano, com os itens da cena por cima, vista de frente ou inclinada. Tocar
  * seleciona um item; arrastar com um dedo o move no plano da pele; girar dois
- * dedos gira o item selecionado (em Z).
+ * dedos gira o item selecionado (em Z) e afastar/aproximar os dedos muda o tamanho.
  *
  * Esta é a única parte do editor que depende de WebGL, e NÃO foi exercitada em
  * navegador real (os testes substituem este módulo). Se o WebGL não existir,
@@ -25,6 +25,9 @@ export interface PreviewStageOptions {
   /** Giro atual (Z, graus) do item, ou null se ele não puder girar. */
   getRotationZ(id: string): number | null;
   onRotate(id: string, degrees: number): void;
+  /** Tamanho (escala) atual do item, ou null se ele não puder ser redimensionado. */
+  getScale(id: string): number | null;
+  onScale(id: string, scale: number): void;
 }
 
 export interface PreviewStage {
@@ -148,6 +151,8 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
     selectedId: options.getSelectedId,
     rotationZ: options.getRotationZ,
     rotate: options.onRotate,
+    scaleOf: options.getScale,
+    rescale: options.onScale,
   });
 
   const toPoint = (event: PointerEvent): Point => ({ x: event.clientX, y: event.clientY });

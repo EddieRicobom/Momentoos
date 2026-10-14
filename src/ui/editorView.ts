@@ -511,6 +511,14 @@ export const editorView: View = (context, root) => {
         const item = draft.find((candidate) => candidate.id === id);
         return item && item.type !== 'audio' ? item.transform.rotation[2] : null;
       },
+      getScale: (id) => {
+        const item = draft.find((candidate) => candidate.id === id);
+        return item && item.type !== 'audio' ? item.transform.scale : null;
+      },
+      onScale: (id, scale) => {
+        const item = draft.find((candidate) => candidate.id === id);
+        if (item && item.type !== 'audio') replaceDraft(applyControl(item, CONTROLS.find((c) => c.id === 'scale')!, scale));
+      },
       onRotate: (id, degrees) => {
         const item = draft.find((candidate) => candidate.id === id);
         if (item && item.type !== 'audio') replaceDraft(applyControl(item, CONTROLS.find((c) => c.id === 'rot-z')!, degrees));
@@ -537,7 +545,7 @@ export const editorView: View = (context, root) => {
           h(
             'p',
             { class: 'muted' },
-            'Toque num item para selecioná-lo, arraste com um dedo para posicionar e gire dois dedos sobre a prévia para girar o item selecionado. A foto é o alvo reconhecido na câmera; o centro dela é o centro do alvo.',
+            'Toque num item para selecioná-lo, arraste com um dedo para posicionar e use dois dedos sobre a prévia para girar (torcendo) e mudar o tamanho (afastando ou aproximando) o item selecionado. A foto é o alvo reconhecido na câmera; o centro dela é o centro do alvo.',
           ),
           statusLine,
           problems,

@@ -69,7 +69,8 @@ Etapa D (cena 3D ancorada):
 - Editor ("Meus projetos" → "Adicionar itens"): adicionar vários arquivos,
   duplicar, remover, ocultar, e ajustar cada item numa **prévia 3D sobre a foto de
   referência** (de frente ou inclinada; tocar seleciona, arrastar com um dedo posiciona e
-  **girar dois dedos gira** o item selecionado no plano dele).
+  com **dois dedos** o item selecionado gira (torcendo) e muda de tamanho
+  (afastando ou aproximando os dedos).
 - Na câmera, os itens aparecem ancorados quando a tatuagem é reconhecida;
   vídeo, áudio, GIF e animações **tocam ao reconhecer e pausam ao perder**.
   Se o navegador bloquear o autoplay, aparece "Tocar áudio e vídeo".

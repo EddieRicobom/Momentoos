@@ -68,6 +68,15 @@ export function wrapDegrees(degrees: number): number {
 }
 
 /**
+ * Tamanho do item depois da pinça: proporcional à distância entre os dedos em
+ * relação ao início do gesto. Distância inicial inválida mantém o tamanho.
+ */
+export function pinchedScale(startScale: number, startDistance: number, distance: number): number {
+  if (!(startDistance > 0) || !Number.isFinite(distance) || distance < 0) return startScale;
+  return startScale * (distance / startDistance);
+}
+
+/**
  * Giro do item (em Z, graus) depois de torcer os dois dedos. Na tela o eixo y
  * aponta para baixo, então girar os dedos no sentido horário AUMENTA o ângulo
  * da tela e deve DIMINUIR o giro do item (anti-horário positivo visto de frente).
