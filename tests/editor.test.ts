@@ -305,6 +305,96 @@ describe('ajustar e salvar', () => {
     expect(root.querySelector('.save-bar')?.textContent).toMatch(/não salvas/);
   });
 
+  it('as setas movem o item de 1 em 1% (0,2% com passo fino) e centralizar zera', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo, true);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    const x = (): number => Number(slider(root, 'Posição horizontal').value);
+    const y = (): number => Number(slider(root, 'Posição vertical').value);
+
+    (root.querySelector('button[aria-label="Mover para a direita"]') as HTMLButtonElement).click();
+    expect(x()).toBeCloseTo(0.01, 6);
+    (root.querySelector('button[aria-label="Mover para cima"]') as HTMLButtonElement).click();
+    expect(y()).toBeCloseTo(0.01, 6);
+
+    button(root, 'Passo fino').click();
+    (root.querySelector('button[aria-label="Mover para a direita"]') as HTMLButtonElement).click();
+    expect(x()).toBeCloseTo(0.012, 6);
+
+    button(root, 'Centralizar').click();
+    expect(x()).toBe(0);
+    expect(y()).toBe(0);
+    expect(root.querySelector('.save-bar')?.textContent).toMatch(/Tudo salvo/); // voltou ao que está salvo
+  });
+
+  it('os botões + e − mudam o tamanho em passos e respeitam os limites', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo, true);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    (root.querySelector('button[aria-label="Aumentar Tamanho"]') as HTMLButtonElement).click();
+    expect(slider(root, 'Tamanho').value).toBe('1.02');
+    (root.querySelector('button[aria-label="Diminuir Tamanho"]') as HTMLButtonElement).click();
+    (root.querySelector('button[aria-label="Diminuir Tamanho"]') as HTMLButtonElement).click();
+    expect(slider(root, 'Tamanho').value).toBe('0.98');
+  });
+
+  it('desfazer e refazer: ajustes seguidos valem como um só; depois de uma pausa, outro', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const repo = await freshRepository();
+      const { project } = await newProject(repo, true);
+      const { root } = await mount(repo, project.id);
+      await ready(root);
+      const undo = root.querySelector('button[aria-label="Desfazer"]') as HTMLButtonElement;
+      const redo = root.querySelector('button[aria-label="Refazer"]') as HTMLButtonElement;
+      expect(undo.disabled).toBe(true);
+      expect(redo.disabled).toBe(true);
+
+      setSlider(slider(root, 'Tamanho'), 1.5);
+      vi.setSystemTime(Date.now() + 100);
+      setSlider(slider(root, 'Tamanho'), 2); // mesmo gesto
+      expect(undo.disabled).toBe(false);
+
+      vi.setSystemTime(Date.now() + 2000); // pausa
+      setSlider(slider(root, 'Tamanho'), 3); // outro ajuste
+
+      undo.click();
+      expect(slider(root, 'Tamanho').value).toBe('2');
+      expect(redo.disabled).toBe(false);
+      undo.click();
+      expect(slider(root, 'Tamanho').value).toBe('1');
+      expect(undo.disabled).toBe(true);
+      redo.click();
+      expect(slider(root, 'Tamanho').value).toBe('2');
+      redo.click();
+      expect(slider(root, 'Tamanho').value).toBe('3');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('um ajuste novo depois de desfazer descarta o "refazer"', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const repo = await freshRepository();
+      const { project } = await newProject(repo, true);
+      const { root } = await mount(repo, project.id);
+      await ready(root);
+      const undo = root.querySelector('button[aria-label="Desfazer"]') as HTMLButtonElement;
+      const redo = root.querySelector('button[aria-label="Refazer"]') as HTMLButtonElement;
+      setSlider(slider(root, 'Tamanho'), 2);
+      undo.click();
+      expect(redo.disabled).toBe(false);
+      vi.setSystemTime(Date.now() + 2000);
+      setSlider(slider(root, 'Tamanho'), 1.4);
+      expect(redo.disabled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('girar com dois dedos muda o giro do item selecionado, sincroniza o controle e vira alteração', async () => {
     const repo = await freshRepository();
     const { project, item } = await newProject(repo, true);

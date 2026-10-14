@@ -90,6 +90,20 @@ export const cameraView: View = (context, root) => {
     'Moldura de teste',
   );
   frameButton.hidden = true;
+  const diagButton = h(
+    'button',
+    {
+      class: 'btn',
+      type: 'button',
+      'aria-pressed': 'false',
+      onclick: () => {
+        showDiagnostics = !showDiagnostics;
+        diagButton.setAttribute('aria-pressed', String(showDiagnostics));
+        render(store.getState());
+      },
+    },
+    'Diagnóstico',
+  );
   const gyroNote = h('p', { class: 'hud-hint', role: 'status' });
   gyroNote.hidden = true;
   const gyroButton = h(
@@ -119,6 +133,8 @@ export const cameraView: View = (context, root) => {
   let disposed = false;
   let updatesPerSecond = 0;
   let frameVisible = true;
+  /** Contadores técnicos (perdas, recuperações, atualizações/s): escondidos por padrão para não poluir a tela. */
+  let showDiagnostics = false;
   let gyroOn = false;
   let gyroBusy = false;
 
@@ -136,7 +152,7 @@ export const cameraView: View = (context, root) => {
     const parts = [`Perdas: ${state.lossCount}`, `Recuperações: ${state.recoveryCount}`];
     if (state.status === 'tracking') parts.push(`${updatesPerSecond} atualizações/s`);
     counters.textContent = parts.join(' · ');
-    counters.hidden = !['searching', 'tracking', 'lost'].includes(state.status);
+    counters.hidden = !showDiagnostics || !['searching', 'tracking', 'lost'].includes(state.status);
   }
 
   function showGyro(on: boolean, note: string | null = null): void {
@@ -336,6 +352,7 @@ export const cameraView: View = (context, root) => {
         mediaButton,
         frameButton,
         gyroButton,
+        diagButton,
         h(
           'button',
           { class: 'btn', type: 'button', onclick: () => context.navigate('home') },

@@ -42,8 +42,8 @@ const option = (key: 'opacity' | 'volume'): Pick<Control, 'read' | 'write'> => (
 });
 
 export const CONTROLS: readonly Control[] = [
-  { id: 'pos-x', label: 'Posição horizontal', group: 'position', min: -1, max: 1, step: 0.005, unit: 'larg.', ...vec('position', 0), types: VISUAL },
-  { id: 'pos-y', label: 'Posição vertical', group: 'position', min: -1, max: 1, step: 0.005, unit: 'larg.', ...vec('position', 1), types: VISUAL },
+  { id: 'pos-x', label: 'Posição horizontal', group: 'position', min: -1, max: 1, step: 0.001, unit: 'larg.', ...vec('position', 0), types: VISUAL },
+  { id: 'pos-y', label: 'Posição vertical', group: 'position', min: -1, max: 1, step: 0.001, unit: 'larg.', ...vec('position', 1), types: VISUAL },
   { id: 'pos-z', label: 'Altura sobre a pele', group: 'position', min: -0.5, max: 1, step: 0.005, unit: 'larg.', ...vec('position', 2), types: VISUAL },
   { id: 'rot-z', label: 'Giro (no plano do item)', group: 'rotation', min: -180, max: 180, step: 1, unit: '°', ...vec('rotation', 2), types: VISUAL },
   { id: 'rot-x', label: 'Inclinação em X', group: 'rotation', min: -180, max: 180, step: 1, unit: '°', ...vec('rotation', 0), types: VISUAL },
@@ -98,6 +98,17 @@ export function moveItem(item: SceneItem, x: number, y: number): SceneItem {
   const px = CONTROLS.find((c) => c.id === 'pos-x')!;
   const py = CONTROLS.find((c) => c.id === 'pos-y')!;
   return applyControl(applyControl(item, px, x), py, y);
+}
+
+/**
+ * Quanto um toque nos botões +/− (ou nas setas) muda o controle: cerca de 0,5%
+ * da faixa, em múltiplos do passo. `fine` divide por 5 (ajuste fino).
+ */
+export function nudgeStep(control: Control, fine = false): number {
+  const range = control.max - control.min;
+  const multiples = Math.max(1, Math.round(range / 200 / control.step));
+  const step = control.step * multiples;
+  return fine ? Math.max(control.step, step / 5) : step;
 }
 
 export function resetTransform(item: SceneItem): SceneItem {

@@ -1,5 +1,6 @@
 import type { Matrix4 } from 'three';
 import type { GyroSource } from './gyro';
+import { PoseSmoother } from './poseSmoother';
 import { PoseStabilizer, type StabilizedFrame, type StabilizerOptions } from './poseStabilizer';
 
 /**
@@ -23,17 +24,37 @@ export interface AssistCallbacks {
   suspended?(): void;
 }
 
+export interface AssistConfig {
+  /** Suaviza a pose do rastreador (tira o tremor). Informe a proporção altura/largura do alvo. */
+  smoothing?: { aspect: number };
+  /**
+   * Sem giroscópio: ao perder a tatuagem, mantém a última pose por este tempo (ms)
+   * antes de informar a perda. Evita que o conteúdo pisque quando o rastreador
+   * falha por um ou dois quadros.
+   */
+  graceMs?: number;
+}
+
 export class AnchorAssist {
   private stabilizer: PoseStabilizer | null = null;
   private source: GyroSource | null = null;
   private reported = false;
   private announcedSuspension = false;
+  private readonly smoother: PoseSmoother | null;
+  private readonly graceMs: number;
+  /** Última pose mostrada (para segurar durante a graça). */
+  private lastPose: Matrix4 | null = null;
+  private graceUntil: number | null = null;
 
   constructor(
     private readonly anchor: AnchorLike,
     private readonly callbacks: AssistCallbacks,
     private readonly now: () => number = () => performance.now(),
-  ) {}
+    config: AssistConfig = {},
+  ) {
+    this.smoother = config.smoothing ? new PoseSmoother(config.smoothing.aspect) : null;
+    this.graceMs = Math.max(0, config.graceMs ?? 0);
+  }
 
   get active(): boolean {
     return this.stabilizer !== null;
@@ -74,6 +95,7 @@ export class AnchorAssist {
   // ------------------------------------------------------------ ganchos do MindAR
 
   handleFound(): void {
+    this.graceUntil = null;
     if (this.reported) return;
     this.reported = true;
     this.callbacks.found();
@@ -83,20 +105,47 @@ export class AnchorAssist {
     const stabilizer = this.stabilizer;
     // Com pose em mãos, quem decide a perda é o estabilizador (veja handleUpdate / handleFrame).
     if (stabilizer && stabilizer.hasPose && !stabilizer.suspended) return;
+    if (this.graceMs > 0 && this.reported && this.lastPose) {
+      // O MindAR já escondeu o grupo e trocou a matriz; devolvemos a última pose até a graça acabar.
+      this.graceUntil = this.now() + this.graceMs;
+      this.anchor.group.matrix = this.lastPose.clone();
+      this.anchor.group.visible = true;
+      return;
+    }
     this.reportLost();
   }
 
   /** Depois de cada leitura do rastreador (a âncora já foi atualizada pelo MindAR). */
   handleUpdate(): void {
+    const now = this.now();
+    let measured: Matrix4 | null = null;
+    if (this.anchor.visible) {
+      measured = this.anchor.group.matrix.clone();
+      if (this.smoother) measured = this.smoother.filter(measured, now);
+    }
     const stabilizer = this.stabilizer;
-    if (!stabilizer) return;
-    const measured = this.anchor.visible ? this.anchor.group.matrix.clone() : null;
-    this.apply(stabilizer.measure(measured, this.now()));
-    this.checkSuspension();
+    if (stabilizer) {
+      this.apply(stabilizer.measure(measured, now));
+      this.checkSuspension();
+      return;
+    }
+    if (measured) {
+      this.graceUntil = null;
+      // Sempre uma matriz nova: o MindAR usa uma matriz compartilhada para "invisível".
+      if (this.smoother) this.anchor.group.matrix = measured;
+      this.lastPose = measured;
+    }
   }
 
   /** A cada quadro de desenho. */
   handleFrame(): void {
+    if (this.graceUntil !== null && this.now() >= this.graceUntil) {
+      this.graceUntil = null;
+      this.anchor.group.visible = false;
+      this.lastPose = null;
+      this.smoother?.reset();
+      this.reportLost();
+    }
     const stabilizer = this.stabilizer;
     if (!stabilizer || !this.source) return;
     stabilizer.rotate(this.source.takeRotation());
@@ -108,6 +157,7 @@ export class AnchorAssist {
 
   private apply(frame: StabilizedFrame): void {
     if (frame.matrix) {
+      this.lastPose = frame.matrix;
       // Sempre uma matriz nova: o MindAR usa uma matriz compartilhada para "invisível".
       this.anchor.group.matrix = frame.matrix;
       this.anchor.group.visible = true;

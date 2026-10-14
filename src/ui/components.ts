@@ -1,6 +1,7 @@
 import { statusLabel, statusTone } from '../tracking/state';
 import type { TrackingStore } from '../tracking/store';
 import { h } from './dom';
+import { icon } from './icons';
 
 /**
  * Indicador de estado do rastreamento. Retorna o elemento e a função que
@@ -30,7 +31,7 @@ export function topBar(title: string, onBack: () => void): HTMLElement {
   return h(
     'header',
     { class: 'topbar' },
-    h('button', { class: 'btn btn-ghost', type: 'button', onclick: onBack, 'aria-label': 'Voltar' }, '←'),
+    h('button', { class: 'btn btn-icon', type: 'button', onclick: onBack, 'aria-label': 'Voltar' }, icon('back')),
     h('h1', { class: 'topbar-title' }, title),
   );
 }

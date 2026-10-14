@@ -245,12 +245,12 @@ export const projectsView: View = (context, root) => {
           ),
         );
       } else if (mode === 'idle') {
-        const actions: HTMLElement[] = [];
+        const main: HTMLElement[] = [];
         if (health.status === 'ready') {
-          actions.push(h('button', { class: 'btn btn-primary', type: 'button', onclick: () => void guarded(open, 'Abrindo o alvo salvo…') }, 'Abrir câmera'));
+          main.push(h('button', { class: 'btn btn-primary', type: 'button', onclick: () => void guarded(open, 'Abrindo o alvo salvo…') }, 'Abrir câmera'));
         }
         if (offerRecompile && hasImage) {
-          actions.push(
+          main.push(
             h(
               'button',
               { class: health.status === 'ready' ? 'btn' : 'btn btn-primary', type: 'button', onclick: () => void guarded(recompile, 'Recompilando a partir da foto de referência…') },
@@ -258,7 +258,7 @@ export const projectsView: View = (context, root) => {
             ),
           );
         }
-        actions.push(
+        main.push(
           h(
             'button',
             {
@@ -271,13 +271,15 @@ export const projectsView: View = (context, root) => {
             },
             record.scene.items.length > 0 ? `Editar itens (${record.scene.items.length})` : 'Adicionar itens',
           ),
-          h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { mode = 'renaming'; message = null; redraw(); } }, 'Renomear'),
         );
+        const more: HTMLElement[] = [
+          h('button', { class: 'btn btn-small', type: 'button', onclick: () => { mode = 'renaming'; message = null; redraw(); } }, 'Renomear'),
+        ];
         if (health.status !== 'broken') {
-          actions.push(h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => void guarded(exportOne, 'Gerando backup…') }, 'Exportar'));
+          more.push(h('button', { class: 'btn btn-small', type: 'button', onclick: () => void guarded(exportOne, 'Gerando backup…') }, 'Exportar'));
         }
-        actions.push(h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { mode = 'confirm-delete'; message = null; redraw(); } }, 'Excluir'));
-        children.push(h('div', { class: 'row' }, ...actions));
+        more.push(h('button', { class: 'btn btn-small btn-quiet-danger', type: 'button', onclick: () => { mode = 'confirm-delete'; message = null; redraw(); } }, 'Excluir'));
+        children.push(h('div', { class: 'row actions-main' }, ...main), h('div', { class: 'row actions-more' }, ...more));
       }
 
       card.replaceChildren(...children.filter((c): c is Node => c !== null));

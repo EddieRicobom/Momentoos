@@ -5,7 +5,15 @@ import { SceneRuntime, type RuntimeSummary } from '../scene/runtime';
 import type { SceneItem } from '../storage/model';
 import { AnchorAssist } from './anchorAssist';
 import type { GyroSource } from './gyro';
+import { setSearchingFrames } from './frameMode';
 import { createVirtualObject } from './virtualObject';
+
+/** Quadros seguidos rastreados antes de mostrar o conteúdo (padrão do MindAR: 5). */
+const WARMUP_FRAMES = 6;
+/** Quadros sem rastrear antes de o MindAR desistir (padrão: 5). */
+const MISS_FRAMES = 10;
+/** Depois que o MindAR desiste, a última pose ainda fica este tempo (ms) antes de informar a perda. */
+const LOSS_GRACE_MS = 450;
 
 export interface ArSessionOptions {
   /** Elemento com tamanho definido (CSS) onde vídeo e canvas serão inseridos. */
@@ -65,6 +73,10 @@ export class ArSession {
       container,
       imageTargetSrc: this.blobUrl,
       maxTrack: 1,
+      // O filtro padrão do MindAR é praticamente desligado (ver poseSmoother.ts); a suavização
+      // é feita pelo AnchorAssist. Aqui só o tempo para confirmar (evita falso alarme) e para desistir.
+      warmupTolerance: WARMUP_FRAMES,
+      missTolerance: MISS_FRAMES,
       // A interface própria do app mostra os estados; desliga as telas do MindAR.
       uiLoading: 'no',
       uiScanning: 'no',
@@ -100,9 +112,19 @@ export class ArSession {
         this.options.onLost();
       },
       suspended: () => this.options.onGyroSuspended?.(),
+    }, undefined, {
+      smoothing: { aspect: targetSize.width > 0 ? targetSize.height / targetSize.width : 0.75 },
+      graceMs: LOSS_GRACE_MS,
     });
-    anchor.onTargetFound = () => this.assist?.handleFound();
-    anchor.onTargetLost = () => this.assist?.handleLost();
+    setSearchingFrames(true);
+    anchor.onTargetFound = () => {
+      setSearchingFrames(false);
+      this.assist?.handleFound();
+    };
+    anchor.onTargetLost = () => {
+      setSearchingFrames(true);
+      this.assist?.handleLost();
+    };
     anchor.onTargetUpdate = () => {
       if (anchor.visible) this.updateCount += 1;
       this.assist?.handleUpdate();
@@ -172,6 +194,7 @@ export class ArSession {
   }
 
   private dispose(): void {
+    setSearchingFrames(true);
     if (this.rateTimer !== null) {
       window.clearInterval(this.rateTimer);
       this.rateTimer = null;
