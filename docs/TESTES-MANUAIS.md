@@ -1,4 +1,4 @@
-# Roteiro de testes manuais (Etapas B, C e D)
+# Roteiro de testes manuais (Etapas B, C e D, carrossel e giroscópio)
 
 Estes testes precisam de um celular e de uma tatuagem real. Nenhum deles foi
 executado ainda. Preencha a coluna **Resultado** conforme for testando: o que
@@ -199,6 +199,28 @@ Tenha 5 ou mais fotos (de preferência de câmera, grandes) e 1 PNG com transpar
 | 9.23 | Com o PNG transparente no carrossel e a transição ligada, observe a troca. | Esperado e documentado: durante ~0,6 s a imagem anterior aparece por trás das áreas transparentes da seguinte. Anote se incomoda. Exporte backup, apague o projeto e importe: o carrossel volta com todas as imagens, tempo e transição. |
 
 Não testado nem previsto: iOS/Safari. Se for o seu caso, anote tudo o que falhar.
+
+## Parte 10: Giroscópio (estabilização opcional)
+
+Pré-requisito: Partes 2 e 3 já passando (o rastreamento sem giroscópio reconhece a
+tatuagem). Teste sempre **comparando ligado × desligado** na mesma tatuagem, mesma luz
+e mesmos movimentos. Anote o aparelho, o navegador e o sistema.
+
+| # | O que fazer | Resultado esperado |
+|---|---|---|
+| 10.1 | Abra a câmera. Veja se existe o botão "Giroscópio: desligado" (habilita quando a câmera fica pronta). Em PC/aparelho sem sensor ele não aparece. | Aparece só onde há sensor. Anote onde sumiu. |
+| 10.2 | Toque no botão. | Android: liga direto. iOS: aparece a pergunta de permissão. Negar mostra "A permissão do giroscópio foi negada." e o botão fica desligado. Sensor sem dados mostra a mensagem de "sem dados". |
+| 10.3 | Com a tatuagem reconhecida e o celular parado na mão, observe o item por 20 s: desligado × ligado. | Ligado deve tremer **menos**. Anote se notou diferença e se parece "pesado/atrasado". |
+| 10.4 | Gire o celular devagar e depressa (panorâmica horizontal, vertical e girando a tela) mantendo a tatuagem à vista. | O conteúdo deve ficar colado na tatuagem, sem "nadar" entre as leituras. Se ele se **afasta** da tatuagem ao girar (sentido invertido) ou se movendo em outro eixo, anote o aparelho: indica eixo/sinal diferente do esperado. |
+| 10.5 | Repita 10.4 com o celular em modo paisagem (e girando a tela entre retrato e paisagem). | Mesmo resultado nas duas orientações. |
+| 10.6 | Aproxime e afaste o celular da tatuagem, e ande de lado (deslocamento, não giro). | Sem vantagem esperada (só rotação é compensada); confira que **não piora** em relação ao desligado. |
+| 10.7 | Cubra a tatuagem por ~0,5 s e depois por ~3 s com a mão, e descubra. | Ligado: em 0,5 s o conteúdo segue o celular e volta sem piscar nem avisar "perdido"; em 3 s some após ~0,8 s e o aviso de perda aparece. Desligado: some logo. Anote se o conteúdo "flutua" para longe da tatuagem durante o 0,8 s. |
+| 10.8 | Vídeo/áudio/GIF/carrossel no projeto: perca e recupere a tatuagem rapidamente (< 0,8 s) e demoradamente. | Em perdas curtas a mídia não pausa; em longas pausa depois do prazo. |
+| 10.9 | Deixe ligado 5 minutos balançando o celular. | Se o app avisar "o giroscópio deste aparelho não concordou com a câmera", anote em que situação (o aviso é o mecanismo de segurança). Anote aquecimento e fluidez (atualizações/s) comparando com desligado. |
+| 10.10 | Feche e reabra a câmera. | Android: religa sozinho quando a câmera fica pronta. iOS: pede um toque ("Toque em Giroscópio para religar"). |
+
+Com base nisto dá para ajustar os números (peso 0,6; prazo 800 ms; limites 8° e 0,25)
+ou concluir que o giroscópio não compensa naquele aparelho.
 
 ## Critérios propostos para considerar o rastreamento validado
 

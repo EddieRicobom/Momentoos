@@ -1,5 +1,6 @@
 import { probeCamera } from '../tracking/camera';
 import { ArSession } from '../tracking/arSession';
+import { gyroNeedsGesture, gyroSupported, startGyro } from '../tracking/gyro';
 import type { RuntimeSummary } from '../scene/runtime';
 import { describeProblems, describeSummary } from '../scene/summaryText';
 import type { SceneItem } from '../storage/model';
@@ -15,6 +16,24 @@ const HINTS: Partial<Record<TrackingState['status'], string>> = {
   searching: 'Enquadre a tatuagem inteira, com boa luz e sem tremer.',
   lost: 'Aponte de novo para a tatuagem. O app tenta recuperar sozinho.',
 };
+
+const GYRO_PREFERENCE_KEY = 'momentoos:gyro';
+
+function readGyroPreference(): boolean {
+  try {
+    return localStorage.getItem(GYRO_PREFERENCE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeGyroPreference(on: boolean): void {
+  try {
+    localStorage.setItem(GYRO_PREFERENCE_KEY, on ? '1' : '0');
+  } catch {
+    /* preferência é só conveniência */
+  }
+}
 
 const PROBLEM_TITLES: Partial<Record<TrackingState['status'], string>> = {
   'permission-denied': 'Permissão da câmera negada',
@@ -71,6 +90,15 @@ export const cameraView: View = (context, root) => {
     'Moldura de teste',
   );
   frameButton.hidden = true;
+  const gyroNote = h('p', { class: 'hud-hint', role: 'status' });
+  gyroNote.hidden = true;
+  const gyroButton = h(
+    'button',
+    { class: 'btn', type: 'button', 'aria-pressed': 'false', onclick: () => void toggleGyro() },
+    'Giroscópio: desligado',
+  );
+  gyroButton.hidden = !gyroSupported();
+  gyroButton.disabled = true;
   const problemTitle = h('h2', { class: 'overlay-title' });
   const problemMessage = h('p', { class: 'overlay-message' });
   const overlay = h(
@@ -91,6 +119,8 @@ export const cameraView: View = (context, root) => {
   let disposed = false;
   let updatesPerSecond = 0;
   let frameVisible = true;
+  let gyroOn = false;
+  let gyroBusy = false;
 
   function render(state: TrackingState): void {
     hint.textContent = HINTS[state.status] ?? '';
@@ -107,6 +137,53 @@ export const cameraView: View = (context, root) => {
     if (state.status === 'tracking') parts.push(`${updatesPerSecond} atualizações/s`);
     counters.textContent = parts.join(' · ');
     counters.hidden = !['searching', 'tracking', 'lost'].includes(state.status);
+  }
+
+  function showGyro(on: boolean, note: string | null = null): void {
+    gyroOn = on;
+    gyroButton.setAttribute('aria-pressed', String(on));
+    gyroButton.textContent = on ? 'Giroscópio: ligado' : 'Giroscópio: desligado';
+    gyroNote.textContent = note ?? '';
+    gyroNote.hidden = note === null;
+  }
+
+  /** Liga o giroscópio na sessão atual. Em iOS precisa vir de um toque (pede permissão). */
+  async function enableGyro(): Promise<void> {
+    const active = session;
+    if (!active || gyroBusy) return;
+    gyroBusy = true;
+    gyroButton.disabled = true;
+    try {
+      const result = await startGyro();
+      if (disposed || session !== active) {
+        if (result.ok) result.source.stop();
+        return;
+      }
+      if (!result.ok) {
+        writeGyroPreference(false);
+        showGyro(false, result.message);
+        return;
+      }
+      if (!active.setGyro(result.source)) {
+        showGyro(false, 'A câmera ainda não está pronta para usar o giroscópio.');
+        return;
+      }
+      writeGyroPreference(true);
+      showGyro(true, null);
+    } finally {
+      gyroBusy = false;
+      if (!disposed) gyroButton.disabled = false;
+    }
+  }
+
+  async function toggleGyro(): Promise<void> {
+    if (gyroOn) {
+      session?.setGyro(null);
+      writeGyroPreference(false);
+      showGyro(false);
+      return;
+    }
+    await enableGyro();
   }
 
   function showScene(summary: RuntimeSummary): void {
@@ -182,6 +259,8 @@ export const cameraView: View = (context, root) => {
     frameButton.setAttribute('aria-pressed', String(frameVisible));
     frameButton.hidden = scene.items.length === 0;
     mediaButton.hidden = true;
+    showGyro(false);
+    gyroButton.disabled = true;
     problemsList.replaceChildren(...(scene.note ? [h('li', {}, scene.note)] : []));
     problemsList.hidden = scene.note === null;
     itemsLine.hidden = true;
@@ -195,7 +274,20 @@ export const cameraView: View = (context, root) => {
       onSceneChange: showScene,
       targetBuffer: target!.buffer,
       targetSize: { width: target!.width, height: target!.height },
-      onReady: () => store.dispatch({ type: 'AR_READY' }),
+      onReady: () => {
+        store.dispatch({ type: 'AR_READY' });
+        gyroButton.disabled = false;
+        // Lembra a escolha; em iOS a permissão só pode ser pedida num toque.
+        if (readGyroPreference() && !gyroOn) {
+          if (gyroNeedsGesture()) showGyro(false, 'Toque em "Giroscópio" para religar (o iOS pede permissão a cada vez).');
+          else void enableGyro();
+        }
+      },
+      onGyroSuspended: () => {
+        session?.setGyro(null);
+        writeGyroPreference(false);
+        showGyro(false, 'O giroscópio deste aparelho não concordou com a câmera e foi desligado. O rastreamento segue só pela câmera.');
+      },
       onFound: () => store.dispatch({ type: 'TARGET_FOUND' }),
       onLost: () => store.dispatch({ type: 'TARGET_LOST' }),
       onTrackingRate: (rate) => {
@@ -235,6 +327,7 @@ export const cameraView: View = (context, root) => {
         itemsLine,
         problemsList,
         hint,
+        gyroNote,
       ),
       overlay,
       h(
@@ -242,6 +335,7 @@ export const cameraView: View = (context, root) => {
         { class: 'camera-bar' },
         mediaButton,
         frameButton,
+        gyroButton,
         h(
           'button',
           { class: 'btn', type: 'button', onclick: () => context.navigate('home') },
