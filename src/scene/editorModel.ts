@@ -146,4 +146,5 @@ export const TYPE_LABEL: Record<ItemType, string> = {
   video: 'Vídeo',
   model: 'Modelo 3D',
   audio: 'Áudio',
+  carousel: 'Carrossel',
 };

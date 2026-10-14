@@ -6,7 +6,8 @@ import {
   assessProject,
   isIsoDate,
   isValidId,
-  itemFileKind,
+  itemFileUnits,
+  MAX_CAROUSEL_SLIDES,
   MAX_ITEMS_PER_PROJECT,
   MAX_ITEM_FILE_BYTES,
   normalizeName,
@@ -25,6 +26,7 @@ import type { FileWrites, ProjectRepository } from './repository';
  *   projects/<id>/anchor.mind
  *   projects/<id>/reference-image.(png|jpg|webp|bin)
  *   projects/<id>/items/<itemId>.<ext>        (formato 2: itens da cena)
+ *   projects/<id>/items/<itemId>~<n>.<ext>    (formato 3: imagens de um carrossel)
  *
  * A importação trata o arquivo como entrada NÃO confiável: só lê os caminhos
  * que o manifesto declara e que seguem o padrão acima, limita tamanhos e
@@ -32,8 +34,8 @@ import type { FileWrites, ProjectRepository } from './repository';
  */
 
 export const BACKUP_FORMAT = 'tattoo-ar-backup';
-/** 1: alvo + foto. 2: acrescenta os itens da cena (o importador aceita 1 e 2). */
-export const BACKUP_FORMAT_VERSION = 2;
+/** 1: alvo + foto. 2: acrescenta os itens da cena. 3: carrossel (várias imagens por item). O importador aceita 1, 2 e 3. */
+export const BACKUP_FORMAT_VERSION = 3;
 export const BACKUP_EXTENSION = '.tattoo-ar.zip';
 export const MANIFEST_PATH = 'manifest.json';
 
@@ -82,9 +84,16 @@ export interface BackupFileEntry {
   sha256: string;
 }
 
+export interface BackupSlideEntry {
+  slot: number;
+  file: BackupFileEntry;
+}
+
+/** Item de arquivo único (`file`) ou carrossel (`slides`). */
 export interface BackupItemEntry {
   id: string;
-  file: BackupFileEntry;
+  file?: BackupFileEntry;
+  slides?: BackupSlideEntry[];
 }
 
 export interface BackupProjectEntry {
@@ -128,11 +137,11 @@ function imageExtension(mimeType: string): (typeof IMAGE_EXTENSIONS)[number] {
   }
 }
 
-const itemPath = (id: string, itemId: string, mimeType: string): string =>
-  `${dirOf(id)}/items/${itemId}.${itemExtension(mimeType)}`;
+const itemPath = (id: string, itemId: string, mimeType: string, slot: number | null = null): string =>
+  `${dirOf(id)}/items/${itemId}${slot === null ? '' : `~${slot}`}.${itemExtension(mimeType)}`;
 
-function isItemPathFor(id: string, itemId: string, path: string): boolean {
-  const prefix = `${dirOf(id)}/items/${itemId}.`;
+function isItemPathFor(id: string, itemId: string, path: string, slot: number | null = null): boolean {
+  const prefix = `${dirOf(id)}/items/${itemId}${slot === null ? '' : `~${slot}`}.`;
   return path.startsWith(prefix) && ITEM_PATH_EXTENSIONS.includes(path.slice(prefix.length));
 }
 
@@ -237,28 +246,49 @@ export async function exportBackup(
       continue;
     }
 
-    // Itens da cena: só saem os que têm arquivo íntegro; os demais são removidos
-    // da cena exportada (com aviso) para não deixar item sem arquivo no backup.
-    const keptItems: Array<{ id: string; mimeType: string; bytes: Uint8Array; path: string }> = [];
+    // Itens da cena: só saem os que têm todos os arquivos íntegros; os demais são
+    // removidos da cena exportada (com aviso) para não deixar item sem arquivo.
+    const keptItems: Array<{
+      id: string;
+      slot: number | null;
+      mimeType: string;
+      bytes: Uint8Array;
+      path: string;
+      size: number;
+      sha256: string;
+    }> = [];
     const outItems = [];
     for (const sceneItem of record.scene.items) {
-      const file = await repo.getFile(id, itemFileKind(sceneItem.id));
-      if (!file) {
-        warnings.push(`"${record.name}": o arquivo do item "${sceneItem.name}" está ausente e o item ficou fora do backup.`);
-      } else if (
-        file.data.byteLength !== sceneItem.file.size ||
-        (await sha256Hex(file.data)) !== sceneItem.file.sha256
-      ) {
-        warnings.push(`"${record.name}": o arquivo do item "${sceneItem.name}" está corrompido e o item ficou fora do backup.`);
-      } else {
-        outItems.push(sceneItem);
-        keptItems.push({
+      const units: typeof keptItems = [];
+      let problem: string | null = null;
+      for (const unit of itemFileUnits(sceneItem)) {
+        const file = await repo.getFile(id, unit.kind);
+        if (!file) {
+          problem = 'ausente';
+          break;
+        }
+        if (file.data.byteLength !== unit.info.size || (await sha256Hex(file.data)) !== unit.info.sha256) {
+          problem = 'corrompido';
+          break;
+        }
+        units.push({
           id: sceneItem.id,
-          mimeType: sceneItem.file.mimeType,
+          slot: unit.slot,
+          mimeType: unit.info.mimeType,
           bytes: new Uint8Array(file.data),
-          path: itemPath(id, sceneItem.id, sceneItem.file.mimeType),
+          path: itemPath(id, sceneItem.id, unit.info.mimeType, unit.slot),
+          size: unit.info.size,
+          sha256: unit.info.sha256,
         });
       }
+      if (problem !== null) {
+        warnings.push(
+          `"${record.name}": um arquivo do item "${sceneItem.name}" está ${problem} e o item ficou fora do backup.`,
+        );
+        continue;
+      }
+      outItems.push(sceneItem);
+      keptItems.push(...units);
     }
     outRecord.scene = { items: outItems };
 
@@ -292,8 +322,17 @@ export async function exportBackup(
     if (keptItems.length > 0) {
       item.items = [];
       for (const kept of keptItems) {
-        const info = outItems.find((candidate) => candidate.id === kept.id)!.file;
-        item.items.push({ id: kept.id, file: { path: kept.path, size: info.size, sha256: info.sha256 } });
+        const file: BackupFileEntry = { path: kept.path, size: kept.size, sha256: kept.sha256 };
+        if (kept.slot === null) {
+          item.items.push({ id: kept.id, file });
+        } else {
+          let entry = item.items.find((candidate) => candidate.id === kept.id);
+          if (!entry) {
+            entry = { id: kept.id, slides: [] };
+            item.items.push(entry);
+          }
+          entry.slides!.push({ slot: kept.slot, file });
+        }
         // Mídia já é comprimida; só o GLB se beneficia de deflate.
         const level = kept.mimeType === 'model/gltf-binary' ? 6 : 0;
         zippable[kept.path] = [kept.bytes, { level, mtime: now }];
@@ -387,7 +426,10 @@ export async function importBackup(
     declared.set(project.project.path, project.project);
     if (project.anchor) declared.set(project.anchor.path, project.anchor);
     if (project.referenceImage) declared.set(project.referenceImage.path, project.referenceImage);
-    for (const entry of project.items ?? []) declared.set(entry.file.path, entry.file);
+    for (const entry of project.items ?? []) {
+      if (entry.file) declared.set(entry.file.path, entry.file);
+      for (const slide of entry.slides ?? []) declared.set(slide.file.path, slide.file);
+    }
   }
 
   let total = 0;
@@ -505,31 +547,44 @@ async function importProject(
   // itens da cena: só entram os que conferem em tamanho, hash e formato
   const keptItems = [];
   for (const sceneItem of record.scene.items) {
-    const declaredEntry = item.items?.find((entry) => entry.id === sceneItem.id)?.file;
-    const bytes = declaredEntry ? files[declaredEntry.path] : undefined;
-
+    const declaredItem = item.items?.find((entry) => entry.id === sceneItem.id);
+    const itemPayloads: FileWrites = {};
     let problem: string | null = null;
-    if (!declaredEntry || !bytes) problem = 'ausente no backup';
-    else if (
-      bytes.byteLength !== sceneItem.file.size ||
-      declaredEntry.size !== sceneItem.file.size ||
-      declaredEntry.sha256 !== sceneItem.file.sha256 ||
-      (await sha256Hex(bytes)) !== sceneItem.file.sha256
-    ) {
-      problem = 'corrompido (hash ou tamanho não conferem)';
-    } else if (!matchesSignature(sceneItem.file.mimeType, bytes)) {
-      problem = 'com conteúdo diferente do formato declarado';
+
+    for (const unit of itemFileUnits(sceneItem)) {
+      const declaredEntry =
+        unit.slot === null
+          ? declaredItem?.file
+          : declaredItem?.slides?.find((slide) => slide.slot === unit.slot)?.file;
+      const bytes = declaredEntry ? files[declaredEntry.path] : undefined;
+
+      if (!declaredEntry || !bytes) problem = 'ausente no backup';
+      else if (
+        bytes.byteLength !== unit.info.size ||
+        declaredEntry.size !== unit.info.size ||
+        declaredEntry.sha256 !== unit.info.sha256 ||
+        (await sha256Hex(bytes)) !== unit.info.sha256
+      ) {
+        problem = 'corrompido (hash ou tamanho não conferem)';
+      } else if (!matchesSignature(unit.info.mimeType, bytes)) {
+        problem = 'com conteúdo diferente do formato declarado';
+      }
+      if (problem !== null || !bytes) {
+        problem ??= 'ausente no backup';
+        break;
+      }
+      itemPayloads[unit.kind] = {
+        mimeType: unit.info.mimeType,
+        data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+      };
     }
 
-    if (problem !== null || !bytes) {
-      report.warnings.push(`"${name}": o arquivo do item "${sceneItem.name}" ${problem ?? 'ausente'}; o item foi ignorado.`);
+    if (problem !== null) {
+      report.warnings.push(`"${name}": um arquivo do item "${sceneItem.name}" está ${problem}; o item foi ignorado.`);
       continue;
     }
     keptItems.push(sceneItem);
-    payloads[itemFileKind(sceneItem.id)] = {
-      mimeType: sceneItem.file.mimeType,
-      data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-    };
+    Object.assign(payloads, itemPayloads);
   }
   record.scene = { items: keptItems };
 
@@ -629,11 +684,29 @@ function parseManifest(bytes: Uint8Array, limits: BackupLimits): BackupManifest 
         const itemId = entry.id;
         if (itemIds.has(itemId)) throw new BackupError('invalid-manifest', `${where}: item repetido.`);
         itemIds.add(itemId);
+        const limit = Math.min(limits.maxFileBytes, MAX_ITEM_FILE_BYTES);
+        if (entry.slides !== undefined) {
+          if (entry.file !== undefined) {
+            throw new BackupError('invalid-manifest', `${where}: item com arquivo e com imagens ao mesmo tempo.`);
+          }
+          if (!Array.isArray(entry.slides) || entry.slides.length === 0 || entry.slides.length > MAX_CAROUSEL_SLIDES) {
+            throw new BackupError('invalid-manifest', `${where}: lista de imagens do carrossel inválida.`);
+          }
+          const slots = new Set<number>();
+          const slides = entry.slides.map((value: unknown): BackupSlideEntry => {
+            if (!isObject(value) || !Number.isInteger(value.slot) || (value.slot as number) < 0 || (value.slot as number) > 9999) {
+              throw new BackupError('invalid-manifest', `${where}: imagem de carrossel mal descrita.`);
+            }
+            const slot = value.slot as number;
+            if (slots.has(slot)) throw new BackupError('invalid-manifest', `${where}: imagem de carrossel repetida.`);
+            slots.add(slot);
+            return { slot, file: fileEntry(value.file, where, limit, (p) => isItemPathFor(id, itemId, p, slot)) };
+          });
+          return { id: itemId, slides };
+        }
         return {
           id: itemId,
-          file: fileEntry(entry.file, where, Math.min(limits.maxFileBytes, MAX_ITEM_FILE_BYTES), (p) =>
-            isItemPathFor(id, itemId, p),
-          ),
+          file: fileEntry(entry.file, where, limit, (p) => isItemPathFor(id, itemId, p)),
         };
       });
     }

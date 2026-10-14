@@ -575,22 +575,23 @@ describe('backup com itens da cena', () => {
     return entry;
   };
 
-  it('declara o formato 2 e guarda cada item em projects/<id>/items/<itemId>.<ext>', async () => {
-    expect(BACKUP_FORMAT_VERSION).toBe(2);
+  it('declara o formato 3 e guarda cada item em projects/<id>/items/<itemId>.<ext>', async () => {
+    expect(BACKUP_FORMAT_VERSION).toBe(3);
     const { repo, id, items } = await projectWithItems();
     const result = await exportBackup(repo, 'all', OPTIONS);
     const manifest = readManifest(result.bytes);
     const zipFiles = unzipSync(result.bytes);
 
-    expect(manifest.formatVersion).toBe(2);
+    expect(manifest.formatVersion).toBe(3);
     expect(result.warnings).toEqual([]);
     const entry = manifest.projects[0]!;
-    expect(entry.items?.map((i) => [i.id, i.file.path])).toEqual([
+    expect(entry.items?.map((i) => [i.id, i.file!.path])).toEqual([
       [items[0]!.id, `projects/${id}/items/${items[0]!.id}.png`],
       [items[1]!.id, `projects/${id}/items/${items[1]!.id}.glb`],
       [items[2]!.id, `projects/${id}/items/${items[2]!.id}.mp3`],
     ]);
-    for (const { file } of entry.items!) {
+    for (const { file: maybe } of entry.items!) {
+      const file = maybe!;
       const bytes = zipFiles[file.path]!;
       expect(bytes.byteLength).toBe(file.size);
       expect(await sha256Hex(bytes)).toBe(file.sha256);
@@ -806,11 +807,11 @@ describe('backup com itens da cena', () => {
       expect(entry.health).toEqual({ status: 'ready' });
     });
 
-    it('backup de um formato mais novo que o 2 continua recusado', async () => {
+    it('backup de um formato mais novo que o 3 continua recusado', async () => {
       const { zip } = await asVersion1();
       const newer = rezip(zip, (files) => {
         const manifest = JSON.parse(strFromU8(files['manifest.json']!));
-        manifest.formatVersion = 3;
+        manifest.formatVersion = 4;
         writeManifest(files, manifest);
       });
       await expect(importBackup(await freshRepository(), newer)).rejects.toMatchObject({ code: 'newer-version' });

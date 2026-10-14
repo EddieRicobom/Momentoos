@@ -12,6 +12,7 @@ const MIME: Record<ItemType, string> = {
   video: 'video/mp4',
   model: 'model/gltf-binary',
   audio: 'audio/mpeg',
+  carousel: 'image/png',
 };
 
 function makeItem(id: string, type: ItemType = 'image', patch: Partial<SceneItem> = {}): SceneItem {
@@ -88,6 +89,7 @@ function setup(items: SceneItem[], options: { fail?: Set<string>; fakes?: Map<st
     video: loader('video'),
     model: loader('model'),
     audio: loader('audio'),
+    carousel: loader('carousel'),
   };
   const changes: RuntimeSummary[] = [];
   const runtime = new SceneRuntime({
@@ -176,7 +178,7 @@ describe('SceneRuntime: carregamento', () => {
     const runtime = new SceneRuntime({
       items: Array.from({ length: 8 }, (_, i) => makeItem(`i${i}`)),
       openFile: async () => new ArrayBuffer(8),
-      loaders: { image: loader, gif: loader, video: loader, model: loader, audio: loader },
+      loaders: { image: loader, gif: loader, video: loader, model: loader, audio: loader, carousel: loader },
       concurrency: 2,
     });
     await runtime.load();

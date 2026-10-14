@@ -32,9 +32,11 @@ Regras:
 Há duas versões independentes:
 
 - **Esquema do IndexedDB** (`DB_VERSION`, hoje 1): estrutura de stores.
-- **Formato do projeto** (`formatVersion` em cada registro, hoje 2): conteúdo
+- **Formato do projeto** (`formatVersion` em cada registro, hoje 3): conteúdo
   do registro. Existe uma cadeia de migrações; a 1→2 troca o antigo campo
-  `content` (que nunca guardou nada além de "nenhum") por uma `scene` vazia. Um registro
+  `content` (que nunca guardou nada além de "nenhum") por uma `scene` vazia; a 2→3
+  acrescenta `options.intervalMs` e `options.fade` (carrossel) aos itens
+  existentes, com os valores padrão (3000 ms, transição ligada). Um registro
   de versão **mais nova** que a do app não é alterado nem apagado: aparece na
   lista como "Versão mais nova" e o app manda atualizar.
 
@@ -48,13 +50,20 @@ some se você mandar excluir.
 | Campo | Significado |
 |---|---|
 | `id` | 1 a 64 caracteres `A-Za-z0-9_-` (o app gera 16 hexadecimais) |
-| `type` | `image`, `gif`, `video`, `model` (GLB) ou `audio` (mp3, ogg, wav, m4a) |
+| `type` | `image`, `gif`, `video`, `model` (GLB), `audio` (mp3, ogg, wav, m4a) ou `carousel` (várias imagens que se alternam) |
 | `name`, `visible` | Nome de exibição e se aparece |
 | `file` | `mimeType`, `size`, `sha256`, `fileName` e, quando conhecidos, `width`, `height`, `durationMs` |
 | `transform` | `scale`, `rotation` (graus, x y z), `position` (x y z, em larguras do alvo) e `offset` (x y z, em larguras do alvo) |
-| `options` | `opacity`, `loop`, `muted`, `volume`, `animate`, `clip` (nome da animação do GLB ou `null`) |
+| `options` | `opacity`, `loop`, `muted`, `volume`, `animate`, `clip` (nome da animação do GLB ou `null`), `intervalMs` (500 a 60000; só vale para carrossel) e `fade` (só carrossel) |
+| `slides` | Só em `carousel`: lista ordenada de imagens, cada uma com `slot` (inteiro 0 a 9999, único no item; identifica o arquivo e não muda quando outras imagens saem) mais os campos de `file` |
 
-Limites: até 100 itens por projeto e 48 MiB por arquivo de item. O tipo vem da
+No carrossel, `file` é uma cópia da primeira imagem de `slides` (sem `slot`) e é
+validado como igual a ela. Cada imagem é PNG, JPG ou WebP (GIF e vídeo não).
+Limites do carrossel: 30 imagens e 100 MiB somados (cada imagem também respeita
+os 48 MiB por arquivo). Cada imagem fica guardada no banco sob a chave
+`item:<itemId>~<slot>`.
+
+Limites: até 100 itens por projeto (um carrossel conta como um) e 48 MiB por arquivo de item. O tipo vem da
 extensão do arquivo e o conteúdo é conferido pela "assinatura" (primeiros
 bytes) do formato; isso evita extensão trocada, mas **não** garante que o
 navegador consiga decodificar o arquivo. YouTube/links não são itens (precisam
@@ -86,6 +95,7 @@ projects/
     anchor.mind               (se houver alvo íntegro)
     reference-image.png|jpg|webp|bin   (se houver foto de referência)
     items/<itemId>.<ext>      (formato 2: um arquivo por item da cena)
+    items/<itemId>~<slot>.<ext>  (formato 3: uma imagem de carrossel)
 ```
 
 A extensão da foto vem do tipo MIME (`image/png`→png, `image/jpeg`→jpg,
@@ -97,7 +107,7 @@ gif, mp4, webm, glb, mp3, ogg, wav, m4a; `bin` para tipo inesperado).
 ```json
 {
   "format": "tattoo-ar-backup",
-  "formatVersion": 2,
+  "formatVersion": 3,
   "createdAt": "2026-10-13T18:30:00.000Z",
   "app": { "name": "momentoos", "version": "0.1.0" },
   "projects": [
@@ -109,14 +119,18 @@ gif, mp4, webm, glb, mp3, ogg, wav, m4a; `bin` para tipo inesperado).
       "anchor":         { "path": "projects/<id>/anchor.mind", "size": 1234567, "sha256": "<64 hex>" },
       "referenceImage": { "path": "projects/<id>/reference-image.png", "size": 345678, "sha256": "<64 hex>" },
       "items": [
-        { "id": "<itemId>", "file": { "path": "projects/<id>/items/<itemId>.glb", "size": 98765, "sha256": "<64 hex>" } }
+        { "id": "<itemId>", "file": { "path": "projects/<id>/items/<itemId>.glb", "size": 98765, "sha256": "<64 hex>" } },
+        { "id": "<carrosselId>", "slides": [
+          { "slot": 0, "file": { "path": "projects/<id>/items/<carrosselId>~0.png", "size": 4321, "sha256": "<64 hex>" } },
+          { "slot": 2, "file": { "path": "projects/<id>/items/<carrosselId>~2.jpg", "size": 5432, "sha256": "<64 hex>" } }
+        ] }
       ]
     }
   ]
 }
 ```
 
-`items` só existe quando a cena tem itens. `anchor` e `referenceImage` são omitidos quando não há o arquivo (ou quando ele
+`items` só existe quando a cena tem itens. Um item de arquivo único traz `file`; um carrossel traz `slides` (nunca os dois). `anchor` e `referenceImage` são omitidos quando não há o arquivo (ou quando ele
 foi deixado de fora por estar corrompido). `name` no manifesto é só para quem
 abrir o arquivo à mão; o nome de verdade está em `project.json`.
 
@@ -170,9 +184,11 @@ foi alterado depois cria uma nova cópia a cada vez.
 
 ### Compatibilidade
 
-- O app lê backups dos formatos **1 e 2**. Um backup 1 (sem itens) entra com
+- O app lê backups dos formatos **1, 2 e 3**. Um backup 1 (sem itens) entra com
   cena vazia; o `project.json` antigo é migrado na leitura.
-- Backups exportados pelo formato 2 **não** abrem em versões antigas do app
+- Um carrossel só entra no backup (e só é importado) se **todas** as imagens
+  estiverem íntegras; se uma falhar, o carrossel inteiro fica de fora, com aviso.
+- Backups exportados pelo formato 3 **não** abrem em versões antigas do app
   (elas recusam por formato mais novo, sem perder nada).
 - Backup de formato maior que o conhecido é recusado com pedido para atualizar.
 
