@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ItemController } from '../src/scene/types';
 import { createProject } from '../src/storage/projects';
 import type { ProjectRepository } from '../src/storage/repository';
-import { addItem } from '../src/storage/scene';
+import { addCarousel, addItem } from '../src/storage/scene';
 import { createTrackingStore } from '../src/tracking/store';
 import type { AppContext } from '../src/ui/context';
 import { freshRepository, makeMind, signedBytes } from './helpers';
@@ -42,6 +42,8 @@ const fakeController = (): ItemController => ({
   setOpacity() {},
   dispose() {},
 });
+const { carouselLoads } = vi.hoisted(() => ({ carouselLoads: [] as number[] }));
+
 vi.mock('../src/scene/loaders', () => ({
   browserLoaders: {
     image: async () => fakeController(),
@@ -49,6 +51,10 @@ vi.mock('../src/scene/loaders', () => ({
     video: async () => fakeController(),
     model: async () => fakeController(),
     audio: async () => ({ ...fakeController(), object: null }),
+    carousel: async (item: { slides?: unknown[] }) => {
+      carouselLoads.push(item.slides?.length ?? 0);
+      return fakeController();
+    },
   },
 }));
 
@@ -126,6 +132,7 @@ async function newProject(repo: ProjectRepository, withItem = false) {
 }
 
 beforeEach(() => {
+  carouselLoads.length = 0;
   stages.length = 0;
   toasts.length = 0;
   webgl = true;
@@ -543,5 +550,226 @@ describe('vistas da prévia', () => {
     await ready(root);
     button(root, 'Reproduzir mídia').click();
     expect(button(root, 'Pausar mídia')).toBeDefined();
+  });
+});
+
+// ------------------------------------------------------------------ carrossel
+
+const pngs = (n: number, from = 1): File[] =>
+  Array.from({ length: n }, (_, i) => file(`foto${from + i}.png`, 'image/png', from + i));
+
+async function waitForItems(repo: ProjectRepository, id: string, count: number): Promise<void> {
+  await vi.waitFor(async () => {
+    if ((await savedItems(repo, id)).length !== count) throw new Error('ainda não');
+  });
+}
+
+describe('carrossel no editor', () => {
+  it('uma imagem só vira item comum, sem perguntar nada', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    await chooseFiles(root, pngs(1));
+    await waitForItems(repo, project.id, 1);
+    expect((await savedItems(repo, project.id))[0]?.type).toBe('image');
+    expect(root.querySelector('.choice-box')?.hasAttribute('hidden')).toBe(true);
+  });
+
+  it('duas ou mais imagens perguntam; nada é gravado antes da resposta', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    await chooseFiles(root, pngs(3));
+    const box = root.querySelector('.choice-box') as HTMLElement;
+    await vi.waitFor(() => {
+      if (box.hidden) throw new Error('sem pergunta');
+    });
+    expect(box.textContent).toMatch(/3 imagens/);
+    expect(await savedItems(repo, project.id)).toHaveLength(0);
+  });
+
+  it('"Carrossel automático" cria um item com as imagens na ordem escolhida e o seleciona', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    await chooseFiles(root, pngs(3));
+    button(root, 'Carrossel automático').click();
+    await waitForItems(repo, project.id, 1);
+    const [item] = await savedItems(repo, project.id);
+    expect(item?.type).toBe('carousel');
+    expect(item?.slides?.map((s) => s.fileName)).toEqual(['foto1.png', 'foto2.png', 'foto3.png']);
+    await vi.waitFor(() => {
+      if (!/Carrossel · 3 imagens/.test(root.textContent ?? '')) throw new Error('painel ainda não mostra');
+    });
+    expect((root.querySelector('.choice-box') as HTMLElement).hidden).toBe(true);
+    expect(root.querySelectorAll('.item-row')[0]?.getAttribute('aria-pressed')).toBe('true');
+    expect(root.querySelectorAll('.slide-row')).toHaveLength(3);
+    // entrou na cena da prévia
+    const runtime = stages[0]!.attach.mock.calls[0]![0];
+    await vi.waitFor(() => {
+      if (runtime.summary().ready !== 1) throw new Error('carrossel não carregou na prévia');
+    });
+  });
+
+  it('"itens separados" cria um item por imagem', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    await chooseFiles(root, pngs(3));
+    button(root, '3 itens separados').click();
+    await waitForItems(repo, project.id, 3);
+    expect((await savedItems(repo, project.id)).map((i) => i.type)).toEqual(['image', 'image', 'image']);
+  });
+
+  it('Cancelar descarta a escolha sem gravar', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    await chooseFiles(root, pngs(2));
+    button(root, 'Cancelar').click();
+    expect((root.querySelector('.choice-box') as HTMLElement).hidden).toBe(true);
+    expect(await savedItems(repo, project.id)).toHaveLength(0);
+  });
+
+  it('numa seleção mista, os outros arquivos entram na hora e só as imagens esperam a resposta', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    await chooseFiles(root, [...pngs(2), file('bicho.glb', 'model/gltf-binary', 9)]);
+    await waitForItems(repo, project.id, 1);
+    expect((await savedItems(repo, project.id))[0]?.type).toBe('model');
+    expect((root.querySelector('.choice-box') as HTMLElement).hidden).toBe(false);
+  });
+
+  it('GIFs não entram na pergunta: dois GIFs viram dois itens', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    await chooseFiles(root, [file('a.gif', 'image/gif', 1), file('b.gif', 'image/gif', 2)]);
+    await waitForItems(repo, project.id, 2);
+    expect((root.querySelector('.choice-box') as HTMLElement).hidden).toBe(true);
+  });
+
+  it('imagens demais para um carrossel mostram o erro e não criam nada', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    await chooseFiles(root, pngs(31));
+    button(root, 'Carrossel automático').click();
+    await vi.waitFor(() => {
+      if (!/no máximo 30 imagens/.test(root.textContent ?? '')) throw new Error('sem erro');
+    });
+    expect(await savedItems(repo, project.id)).toHaveLength(0);
+  });
+
+  async function withCarousel(count = 3) {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo);
+    await addCarousel(repo, project.id, {
+      files: Array.from({ length: count }, (_, i) => ({ data: signedBytes('image/png', 64, i + 1), fileName: `s${i + 1}.png` })),
+      name: 'Flores',
+    });
+    const view = await mount(repo, project.id);
+    await ready(view.root);
+    return { repo, project, ...view };
+  }
+
+  it('o painel mostra intervalo, transição e a lista de imagens; item comum não mostra', async () => {
+    const { root } = await withCarousel();
+    expect(slider(root, 'Tempo de cada imagem').value).toBe('3');
+    expect(root.textContent).toMatch(/Imagens \(3\/30\)/);
+    expect(root.textContent).toMatch(/Transição suave entre as imagens/);
+    expect(root.querySelectorAll('.slide-row')).toHaveLength(3);
+  });
+
+  it('mudar intervalo e transição entra nas alterações e fica salvo', async () => {
+    const { repo, project, root } = await withCarousel();
+    setSlider(slider(root, 'Tempo de cada imagem'), 7.5);
+    const fade = [...root.querySelectorAll('label.check-row')].find((l) => /Transição suave/.test(l.textContent ?? ''))!.querySelector('input')!;
+    fade.checked = false;
+    fade.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(root.textContent).toMatch(/Alterações não salvas/);
+    button(root, 'Salvar').click();
+    await vi.waitFor(async () => {
+      const [item] = await savedItems(repo, project.id);
+      if (item?.options.intervalMs !== 7500) throw new Error('ainda não');
+    });
+    expect((await savedItems(repo, project.id))[0]?.options).toMatchObject({ intervalMs: 7500, fade: false });
+  });
+
+  it('remover uma imagem apaga o arquivo, atualiza a lista e recarrega o item na prévia', async () => {
+    const { repo, project, root } = await withCarousel();
+    const runtime = stages[0]!.attach.mock.calls[0]![0];
+    await vi.waitFor(() => {
+      if (runtime.summary().ready !== 1) throw new Error('não carregou');
+    });
+    (root.querySelector('button[aria-label="Remover a imagem 2"]') as HTMLButtonElement).click();
+    await vi.waitFor(async () => {
+      if (((await savedItems(repo, project.id))[0]?.slides?.length ?? 0) !== 2) throw new Error('ainda não');
+    });
+    expect((await savedItems(repo, project.id))[0]?.slides?.map((s) => s.fileName)).toEqual(['s1.png', 's3.png']);
+    await vi.waitFor(() => {
+      if (root.querySelectorAll('.slide-row').length !== 2) throw new Error('lista não atualizou');
+    });
+    await vi.waitFor(() => {
+      if (runtime.summary().ready !== 1) throw new Error('item não voltou à prévia');
+    });
+    // a prévia carregou o carrossel de novo, agora com 2 imagens
+    expect(carouselLoads).toEqual([3, 2]);
+  });
+
+  it('com uma imagem só, o botão Remover fica desativado', async () => {
+    const { root } = await withCarousel(1);
+    expect((root.querySelector('button[aria-label="Remover a imagem 1"]') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('"Adicionar imagens" acrescenta ao fim do carrossel', async () => {
+    const { repo, project, root } = await withCarousel(2);
+    const input = root.querySelector('input[aria-label="Adicionar imagens ao carrossel"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: pngs(2, 10), configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.waitFor(async () => {
+      if (((await savedItems(repo, project.id))[0]?.slides?.length ?? 0) !== 4) throw new Error('ainda não');
+    });
+    expect((await savedItems(repo, project.id))[0]?.slides?.map((s) => s.fileName)).toEqual(['s1.png', 's2.png', 'foto10.png', 'foto11.png']);
+  });
+
+  it('ajustes pendentes são salvos antes de mexer nas imagens', async () => {
+    const { repo, project, root } = await withCarousel(3);
+    setSlider(slider(root, 'Tempo de cada imagem'), 12);
+    (root.querySelector('button[aria-label="Remover a imagem 1"]') as HTMLButtonElement).click();
+    await vi.waitFor(async () => {
+      if (((await savedItems(repo, project.id))[0]?.slides?.length ?? 0) !== 2) throw new Error('ainda não');
+    });
+    expect((await savedItems(repo, project.id))[0]?.options.intervalMs).toBe(12000);
+  });
+
+  it('criar um carrossel salva antes os ajustes pendentes de outros itens', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo, true);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    setSlider(slider(root, 'Tamanho'), 2);
+    await chooseFiles(root, pngs(2, 20));
+    button(root, 'Carrossel automático').click();
+    await waitForItems(repo, project.id, 2);
+    expect((await savedItems(repo, project.id))[0]?.transform.scale).toBe(2);
+  });
+
+  it('duplicar copia o carrossel inteiro', async () => {
+    const { repo, project, root } = await withCarousel(3);
+    button(root, 'Duplicar').click();
+    await waitForItems(repo, project.id, 2);
+    const items = await savedItems(repo, project.id);
+    expect(items[1]?.slides).toHaveLength(3);
+    expect(items[1]?.id).not.toBe(items[0]?.id);
   });
 });

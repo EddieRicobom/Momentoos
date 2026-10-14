@@ -3,7 +3,7 @@ import { ArSession } from '../tracking/arSession';
 import type { RuntimeSummary } from '../scene/runtime';
 import { describeProblems, describeSummary } from '../scene/summaryText';
 import type { SceneItem } from '../storage/model';
-import { openItemFile } from '../storage/scene';
+import { openItemFile, openSlideFile } from '../storage/scene';
 import type { TrackingState } from '../tracking/state';
 import { statusChip } from './components';
 import type { View } from './context';
@@ -122,6 +122,7 @@ export const cameraView: View = (context, root) => {
   interface LoadedScene {
     items: SceneItem[];
     open?: (itemId: string) => Promise<ArrayBuffer>;
+    openSlide?: (itemId: string, slot: number) => Promise<ArrayBuffer>;
     note: string | null;
   }
 
@@ -143,6 +144,7 @@ export const cameraView: View = (context, root) => {
         items,
         note,
         open: async (itemId) => (await openItemFile(repo, projectId, itemId)).data,
+        openSlide: async (itemId, slot) => (await openSlideFile(repo, projectId, itemId, slot)).data,
       };
     } catch (error) {
       return {
@@ -188,6 +190,7 @@ export const cameraView: View = (context, root) => {
       container: stage,
       sceneItems: scene.items,
       ...(scene.open ? { openItemFile: scene.open } : {}),
+      ...(scene.openSlide ? { openSlideFile: scene.openSlide } : {}),
       showTestObject: frameVisible,
       onSceneChange: showScene,
       targetBuffer: target!.buffer,

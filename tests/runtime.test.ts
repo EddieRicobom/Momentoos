@@ -422,3 +422,51 @@ describe('SceneRuntime: edição de itens (add / remove / seleção)', () => {
     expect(runtime.clipsOf('bad')).toEqual([]);
   });
 });
+
+describe('SceneRuntime: carrossel', () => {
+  it('o carregador recebe um openSlide ligado ao item; sem openSlide a chamada falha com mensagem clara', async () => {
+    const seen: Array<{ itemId: string; slot: number }> = [];
+    let context: Parameters<ItemLoaders['carousel']>[2] | null = null;
+    const fake = makeFake('carousel');
+    const loaders: ItemLoaders = {
+      image: async () => makeFake('image'),
+      gif: async () => makeFake('gif'),
+      video: async () => makeFake('video'),
+      model: async () => makeFake('model'),
+      audio: async () => makeFake('audio'),
+      carousel: async (_item, _data, ctx) => {
+        context = ctx;
+        return fake;
+      },
+    };
+    const item = makeItem('c1', 'carousel');
+    const runtime = new SceneRuntime({
+      items: [item],
+      openFile: async () => new ArrayBuffer(8),
+      openSlide: async (itemId, slot) => {
+        seen.push({ itemId, slot });
+        return new ArrayBuffer(slot + 1);
+      },
+      loaders,
+    });
+    await runtime.load();
+    expect((await context!.openSlide(3)).byteLength).toBe(4);
+    expect(seen).toEqual([{ itemId: 'c1', slot: 3 }]);
+
+    const bare = new SceneRuntime({ items: [makeItem('c2', 'carousel')], openFile: async () => new ArrayBuffer(8), loaders });
+    await bare.load();
+    await expect(context!.openSlide(1)).rejects.toThrow(/indisponíveis/);
+  });
+
+  it('updateItem repassa o item editado ao controlador (configure) e só para itens prontos', async () => {
+    const configured: SceneItem[] = [];
+    const fakes = new Map<string, Fake>();
+    fakes.set('c1', makeFake('carousel', { configure: (item: SceneItem) => void configured.push(item) }));
+    const { runtime } = setup([makeItem('c1', 'carousel'), makeItem('bad', 'carousel')], { fakes, fail: new Set(['bad']) });
+    await runtime.load();
+    const edited = makeItem('c1', 'carousel', { options: { ...defaultOptions('carousel'), intervalMs: 9000, fade: false } });
+    runtime.updateItem(edited);
+    runtime.updateItem(makeItem('bad', 'carousel'));
+    expect(configured).toEqual([edited]);
+  });
+});

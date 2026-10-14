@@ -815,3 +815,33 @@ input {
 .editor [aria-pressed='true'].btn {
   border-color: var(--accent);
 }
+
+.choice-box {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.slide-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.slide-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slide-row .item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

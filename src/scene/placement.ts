@@ -69,6 +69,37 @@ export function gifFrameIndex(timeMs: number, durationsMs: readonly number[]): n
   return durations.length - 1;
 }
 
+export interface CarouselFrame {
+  /** Posição (na lista de slides ativos) do slide mostrado por inteiro. */
+  index: number;
+  /** Slide que está aparecendo por cima; null fora da transição. */
+  next: number | null;
+  /** Quanto do próximo já apareceu (0 a 1). */
+  mix: number;
+}
+
+/** Duração máxima da transição suave entre slides. */
+export const CAROUSEL_FADE_MS = 600;
+
+/**
+ * Qual slide mostrar no instante `timeMs` (contado só enquanto a tatuagem é
+ * vista). Cada slide fica `intervalMs`; com `fade`, a transição para o próximo
+ * ocupa o fim desse tempo (no máximo CAROUSEL_FADE_MS e nunca mais que metade
+ * do intervalo), então o ciclo total continua sendo count × intervalMs.
+ */
+export function carouselFrame(timeMs: number, count: number, intervalMs: number, fade: boolean): CarouselFrame {
+  if (count <= 0 || !(intervalMs > 0)) return { index: 0, next: null, mix: 0 };
+  const cycle = count * intervalMs;
+  const t = Number.isFinite(timeMs) ? ((timeMs % cycle) + cycle) % cycle : 0;
+  const index = Math.min(count - 1, Math.floor(t / intervalMs));
+  if (!fade || count < 2) return { index, next: null, mix: 0 };
+  const fadeMs = Math.min(CAROUSEL_FADE_MS, intervalMs / 2);
+  const into = t - index * intervalMs;
+  const start = intervalMs - fadeMs;
+  if (into <= start) return { index, next: null, mix: 0 };
+  return { index, next: (index + 1) % count, mix: Math.min(1, (into - start) / fadeMs) };
+}
+
 export interface Placement {
   position: Vec3;
   rotation: Vec3;

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { fitPlane, gifFrameIndex, modelFit } from './placement';
+import { carouselFrame, fitPlane, gifFrameIndex, modelFit } from './placement';
 import type { ItemController, ItemLoader, ItemLoaders } from './types';
 
 /**
@@ -114,6 +114,175 @@ function staticImageController(image: HTMLImageElement, note?: string): ItemCont
 
 const loadImage: ItemLoader = async (item, data) =>
   staticImageController(await decodeImage(data, item.file.mimeType));
+
+// ------------------------------------------------------------------ carrossel
+
+/** Maior lado da textura de um slide: fotos de câmera têm dezenas de megapixels. */
+const CAROUSEL_TEXTURE_SIDE = 1536;
+/** Até este número de slides, todas as texturas ficam na memória; acima, só as próximas. */
+const CAROUSEL_KEEP_ALL_UP_TO = 4;
+
+interface SlideTexture {
+  texture: THREE.Texture;
+  width: number;
+  height: number;
+}
+
+function slideTexture(image: HTMLImageElement): SlideTexture {
+  const width = image.naturalWidth;
+  const height = image.naturalHeight;
+  let source: HTMLImageElement | HTMLCanvasElement = image;
+  const longest = Math.max(width, height);
+  if (longest > CAROUSEL_TEXTURE_SIDE) {
+    const ratio = CAROUSEL_TEXTURE_SIDE / longest;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * ratio));
+    canvas.height = Math.max(1, Math.round(height * ratio));
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      source = canvas;
+    }
+  }
+  const texture = new THREE.Texture(source);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return { texture, width, height };
+}
+
+/**
+ * Carrossel: troca as imagens sozinho enquanto a tatuagem é vista. A primeira
+ * imagem vem pronta; as outras são abertas sob demanda (a atual e a próxima)
+ * e as que ficam para trás são descartadas, para não encher a memória do
+ * celular. Um slide que falha é pulado, e o carrossel continua com os outros.
+ * Não foi exercitado em navegador real.
+ */
+const loadCarousel: ItemLoader = async (item, data, context) => {
+  const slides = item.slides ?? [];
+  const firstSlide = slides[0];
+  if (!firstSlide) throw new Error('O carrossel não tem imagens.');
+
+  const cache = new Map<number, SlideTexture>();
+  const pending = new Set<number>();
+  const failed = new Set<number>();
+  cache.set(firstSlide.slot, slideTexture(await decodeImage(data, firstSlide.mimeType)));
+
+  const geometry = new THREE.PlaneGeometry(1, 1);
+  const makeMesh = (renderOrder: number): THREE.Mesh => {
+    const material = new THREE.MeshBasicMaterial({
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.renderOrder = renderOrder;
+    mesh.visible = false;
+    return mesh;
+  };
+  const front = makeMesh(0);
+  const back = makeMesh(1);
+  const group = new THREE.Group();
+  group.add(front, back);
+
+  let timeMs = 0;
+  let active = false;
+  let opacity = item.options.opacity;
+  let intervalMs = item.options.intervalMs;
+  let fade = item.options.fade;
+  let disposed = false;
+
+  const show = (mesh: THREE.Mesh, slot: number): boolean => {
+    const entry = cache.get(slot);
+    if (!entry) return false;
+    if (mesh.userData.slot !== slot) {
+      const material = mesh.material as THREE.MeshBasicMaterial;
+      material.map = entry.texture;
+      material.needsUpdate = true;
+      const size = fitPlane(entry.width, entry.height);
+      mesh.scale.set(size.width, size.height, 1);
+      mesh.userData.slot = slot;
+    }
+    mesh.visible = true;
+    return true;
+  };
+
+  const ensure = (slot: number): void => {
+    if (cache.has(slot) || pending.has(slot) || failed.has(slot) || disposed) return;
+    const slide = slides.find((candidate) => candidate.slot === slot);
+    if (!slide) return;
+    pending.add(slot);
+    void (async () => {
+      try {
+        const image = await decodeImage(await context.openSlide(slot), slide.mimeType);
+        if (disposed) return;
+        cache.set(slot, slideTexture(image));
+      } catch {
+        failed.add(slot);
+      } finally {
+        pending.delete(slot);
+      }
+    })();
+  };
+
+  show(front, firstSlide.slot);
+
+  return {
+    ...base,
+    object: group,
+    get note() {
+      return failed.size > 0
+        ? `${failed.size} imagem(ns) do carrossel não puderam ser abertas e foram puladas.`
+        : undefined;
+    },
+    setActive: async (next) => {
+      active = next;
+    },
+    configure: (updated) => {
+      intervalMs = updated.options.intervalMs;
+      fade = updated.options.fade;
+    },
+    setOpacity: (next) => {
+      opacity = next;
+    },
+    update: (deltaSeconds) => {
+      if (active) timeMs += deltaSeconds * 1000;
+      const playlist = slides.filter((slide) => !failed.has(slide.slot));
+      const frame = carouselFrame(timeMs, playlist.length, intervalMs, fade);
+      const current = playlist[frame.index];
+      const upcoming = playlist[(frame.index + 1) % Math.max(1, playlist.length)];
+      if (current) ensure(current.slot);
+      if (upcoming) ensure(upcoming.slot);
+
+      if (current) show(front, current.slot);
+      const next = frame.next === null ? undefined : playlist[frame.next];
+      if (next && show(back, next.slot)) {
+        (back.material as THREE.MeshBasicMaterial).opacity = opacity * frame.mix;
+      } else {
+        back.visible = false;
+        delete back.userData.slot;
+      }
+      (front.material as THREE.MeshBasicMaterial).opacity = opacity;
+
+      if (playlist.length > CAROUSEL_KEEP_ALL_UP_TO) {
+        const keep = new Set<number>([front.userData.slot, back.userData.slot, current?.slot, upcoming?.slot].filter((v): v is number => typeof v === 'number'));
+        for (const [slot, entry] of cache) {
+          if (keep.has(slot)) continue;
+          entry.texture.dispose();
+          cache.delete(slot);
+        }
+      }
+    },
+    dispose: () => {
+      disposed = true;
+      for (const entry of cache.values()) entry.texture.dispose();
+      cache.clear();
+      geometry.dispose();
+      (front.material as THREE.Material).dispose();
+      (back.material as THREE.Material).dispose();
+    },
+  };
+};
 
 // ------------------------------------------------------------------ GIF
 
@@ -406,6 +575,5 @@ export const browserLoaders: ItemLoaders = {
   video: loadVideo,
   model: loadModel,
   audio: loadAudio,
-  // Provisório: mostra só a primeira imagem do carrossel (a troca automática vem na etapa seguinte).
-  carousel: loadImage,
+  carousel: loadCarousel,
 };

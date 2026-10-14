@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { RuntimeSummary } from '../src/scene/runtime';
 import { createProject } from '../src/storage/projects';
-import { addItem, updateItem } from '../src/storage/scene';
+import { addCarousel, addItem, updateItem } from '../src/storage/scene';
 import type { ProjectRepository } from '../src/storage/repository';
 import { createTrackingStore } from '../src/tracking/store';
 import type { AppContext, AppTarget } from '../src/ui/context';
@@ -127,6 +127,32 @@ describe('câmera com a cena do projeto', () => {
     expect(options.showTestObject).toBe(false);
     const bytes = new Uint8Array(await options.openItemFile(a.item.id));
     expect(bytes).toEqual(new Uint8Array(signedBytes('image/png', 80, 1)));
+    expect(root.textContent).toMatch(/1 item\(ns\) sem arquivo/);
+    cleanup();
+  });
+
+  it('carrossel: entrega o item e abre cada imagem pelo slot; carrossel com imagem faltando é ignorado', async () => {
+    const repo = await freshRepository();
+    const project = await createProject(repo, { name: 'Cena', anchor: makeMind() });
+    const good = await addCarousel(repo, project.id, {
+      files: [
+        { data: signedBytes('image/png', 80, 1), fileName: 'a.png' },
+        { data: signedBytes('image/png', 80, 2), fileName: 'b.png' },
+      ],
+    });
+    const broken = await addCarousel(repo, project.id, {
+      files: [
+        { data: signedBytes('image/png', 80, 3), fileName: 'c.png' },
+        { data: signedBytes('image/png', 80, 4), fileName: 'd.png' },
+      ],
+    });
+    await repo.save((await repo.getEntry(project.id) as any).record, { [`item:${broken.item.id}~1`]: null });
+
+    const { root, cleanup } = await mount(target(project.id), async () => repo);
+    const options = sessions[0]!.options;
+    expect(options.sceneItems.map((i: { id: string }) => i.id)).toEqual([good.item.id]);
+    expect(new Uint8Array(await options.openSlideFile(good.item.id, 1))).toEqual(new Uint8Array(signedBytes('image/png', 80, 2)));
+    expect(new Uint8Array(await options.openItemFile(good.item.id))).toEqual(new Uint8Array(signedBytes('image/png', 80, 1)));
     expect(root.textContent).toMatch(/1 item\(ns\) sem arquivo/);
     cleanup();
   });

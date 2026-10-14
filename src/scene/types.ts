@@ -21,10 +21,18 @@ export interface ItemController {
   resume(): Promise<void>;
   update(deltaSeconds: number): void;
   setOpacity(opacity: number): void;
+  /** O item foi editado (opções que o controlador lê ao vivo, como o intervalo do carrossel). */
+  configure?(item: SceneItem): void;
   /** O item usa materiais com iluminação (modelos 3D). */
   readonly needsLights: boolean;
   dispose(): void;
 }
 
-export type ItemLoader = (item: SceneItem, data: ArrayBuffer) => Promise<ItemController>;
+/** O que o runtime oferece aos carregadores além do arquivo principal do item. */
+export interface LoaderContext {
+  /** Bytes (já conferidos) de uma imagem de carrossel, pelo `slot`. */
+  openSlide(slot: number): Promise<ArrayBuffer>;
+}
+
+export type ItemLoader = (item: SceneItem, data: ArrayBuffer, context: LoaderContext) => Promise<ItemController>;
 export type ItemLoaders = Record<SceneItem['type'], ItemLoader>;

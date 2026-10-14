@@ -63,6 +63,8 @@ export interface SceneRuntimeOptions {
   items: readonly SceneItem[];
   /** Bytes do arquivo de um item (já conferidos pelo armazenamento). */
   openFile(itemId: string): Promise<ArrayBuffer>;
+  /** Bytes de uma imagem de carrossel (sem isto, só a primeira imagem aparece). */
+  openSlide?(itemId: string, slot: number): Promise<ArrayBuffer>;
   loaders: ItemLoaders;
   /** Carrega também os itens ocultos (o editor liga e desliga ao vivo). */
   includeHidden?: boolean;
@@ -121,7 +123,12 @@ export class SceneRuntime {
     try {
       const data = await this.options.openFile(item.id);
       if (this.disposed) return;
-      controller = await this.options.loaders[item.type](item, data);
+      controller = await this.options.loaders[item.type](item, data, {
+        openSlide: (slot) => {
+          const open = this.options.openSlide;
+          return open ? open(item.id, slot) : Promise.reject(new Error('Imagens do carrossel indisponíveis.'));
+        },
+      });
       if (this.disposed) {
         controller.dispose();
         return;
@@ -224,6 +231,7 @@ export class SceneRuntime {
     applyItemTransform(entry.nodes, item.transform);
     entry.nodes.root.visible = item.visible;
     entry.controller.setOpacity(item.options.opacity);
+    entry.controller.configure?.(item);
   }
 
   /** Acrescenta e carrega um item depois da montagem inicial (editor). */
