@@ -2,7 +2,7 @@ import { StorageError, toStorageError } from './errors';
 import {
   assessProject,
   isFileKind,
-  itemFileKind,
+  itemFileUnits,
   parseProjectRecord,
   type FileKind,
   type ProjectHealth,
@@ -113,7 +113,7 @@ export async function openRepository(options: OpenOptions = {}): Promise<Project
       referenceImage: files.has(fileKey(record.id, 'referenceImage')),
     });
     const missingItems = record.scene.items
-      .filter((item) => !files.has(fileKey(record.id, itemFileKind(item.id))))
+      .filter((item) => !itemFileUnits(item).every((unit) => files.has(fileKey(record.id, unit.kind))))
       .map((item) => item.id);
     return { kind: 'project', record, health, missingItems };
   };

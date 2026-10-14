@@ -5,7 +5,7 @@ import { isSha256Hex } from './hash';
  * Versão do formato do registro de projeto (campo `formatVersion`).
  * Aumente quando a estrutura mudar e adicione o passo em MIGRATIONS.
  */
-export const PROJECT_FORMAT_VERSION = 2;
+export const PROJECT_FORMAT_VERSION = 3;
 
 export const NAME_MAX_LENGTH = 80;
 
@@ -40,11 +40,11 @@ export function defaultTransform(): ItemTransform {
  * Tipos de item. 'youtube' NÃO existe de propósito: um iframe não entra numa
  * cena WebGL e a reprodução depende de internet e das regras do próprio serviço.
  */
-export const ITEM_TYPES = ['image', 'gif', 'video', 'model', 'audio'] as const;
+export const ITEM_TYPES = ['image', 'gif', 'video', 'model', 'audio', 'carousel'] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
 /** Itens que aparecem na cena 3D (áudio só toca). */
-export const VISUAL_ITEM_TYPES: readonly ItemType[] = ['image', 'gif', 'video', 'model'];
+export const VISUAL_ITEM_TYPES: readonly ItemType[] = ['image', 'gif', 'video', 'model', 'carousel'];
 
 /**
  * Tipos MIME aceitos por tipo de item. Modelos aceitam só GLB (um arquivo
@@ -56,6 +56,8 @@ export const ITEM_MIME: Record<ItemType, readonly string[]> = {
   video: ['video/mp4', 'video/webm'],
   model: ['model/gltf-binary'],
   audio: ['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/mp4', 'audio/webm'],
+  // Carrossel: lista de imagens estáticas (cada slide segue as regras de 'image').
+  carousel: ['image/png', 'image/jpeg', 'image/webp'],
 };
 
 /** Máximo de itens por projeto: um teto técnico para proteger a memória do celular, não um número de produto. */
@@ -65,6 +67,17 @@ export const MAX_ITEMS_PER_PROJECT = 100;
 export const MAX_ITEM_FILE_BYTES = 48 * 1024 * 1024;
 
 export const ITEM_FILENAME_MAX_LENGTH = 200;
+
+/** Máximo de imagens de um carrossel (cada uma vira textura na GPU quando aparece). */
+export const MAX_CAROUSEL_SLIDES = 30;
+
+/** Soma máxima dos arquivos de um carrossel. */
+export const MAX_CAROUSEL_BYTES = 100 * 1024 * 1024;
+
+/** Tempo que cada slide fica na tela, em ms. */
+export const CAROUSEL_INTERVAL_MIN_MS = 500;
+export const CAROUSEL_INTERVAL_MAX_MS = 60_000;
+export const CAROUSEL_INTERVAL_DEFAULT_MS = 3_000;
 
 export interface ItemOptions {
   /** 0 a 1; vale para itens visuais. */
@@ -79,6 +92,10 @@ export interface ItemOptions {
   animate: boolean;
   /** Modelo: nome da animação a tocar; null = a primeira do arquivo. */
   clip: string | null;
+  /** Carrossel: quanto tempo cada slide fica na tela (ms). */
+  intervalMs: number;
+  /** Carrossel: transição suave entre slides (senão, troca seca). */
+  fade: boolean;
 }
 
 export function defaultOptions(type: ItemType): ItemOptions {
@@ -89,6 +106,8 @@ export function defaultOptions(type: ItemType): ItemOptions {
     volume: 1,
     animate: type === 'model',
     clip: null,
+    intervalMs: CAROUSEL_INTERVAL_DEFAULT_MS,
+    fade: true,
   };
 }
 
@@ -102,12 +121,20 @@ export interface ItemFileInfo extends StoredFileInfo {
   durationMs?: number;
 }
 
+/** Uma imagem do carrossel. `slot` identifica o arquivo (não muda se outros slides saírem). */
+export interface CarouselSlide extends ItemFileInfo {
+  slot: number;
+}
+
 export interface SceneItem {
   id: string;
   type: ItemType;
   name: string;
   visible: boolean;
+  /** Carrossel: cópia do primeiro slide (sem `slot`); o arquivo vive em `slides`. */
   file: ItemFileInfo;
+  /** Só para type 'carousel': as imagens, na ordem de exibição. */
+  slides?: CarouselSlide[];
   transform: ItemTransform;
   options: ItemOptions;
 }
@@ -163,9 +190,35 @@ export type FileKind = 'anchor' | 'referenceImage' | `item:${string}`;
 
 export const itemFileKind = (itemId: string): FileKind => `item:${itemId}`;
 
+/** Arquivo de um slide de carrossel: 'item:<id do item>~<slot>'. */
+export const slideFileKind = (itemId: string, slot: number): FileKind => `item:${itemId}~${slot}`;
+
+const SLOT_PATTERN = /^\d{1,4}$/;
+
 export function isFileKind(value: unknown): value is FileKind {
   if (value === 'anchor' || value === 'referenceImage') return true;
-  return typeof value === 'string' && value.startsWith('item:') && isValidId(value.slice(5));
+  if (typeof value !== 'string' || !value.startsWith('item:')) return false;
+  const [id, slot, ...rest] = value.slice(5).split('~');
+  return rest.length === 0 && isValidId(id) && (slot === undefined || SLOT_PATTERN.test(slot));
+}
+
+/** Um arquivo guardado de um item: o `kind` no banco e o descritor correspondente. */
+export interface ItemFileUnit {
+  kind: FileKind;
+  info: ItemFileInfo;
+  /** null para item de arquivo único. */
+  slot: number | null;
+}
+
+/** Todos os arquivos de um item: um, ou um por slide no carrossel. */
+export function itemFileUnits(item: SceneItem): ItemFileUnit[] {
+  if (item.type === 'carousel') {
+    return (item.slides ?? []).map((slide) => {
+      const { slot, ...info } = slide;
+      return { kind: slideFileKind(item.id, slot), info, slot };
+    });
+  }
+  return [{ kind: itemFileKind(item.id), info: item.file, slot: null }];
 }
 
 // ---------------------------------------------------------------- nomes e ids
@@ -202,11 +255,30 @@ export type ParseResult =
  * 1 → 2: o campo único `content` (que na prática era sempre "none": o app nunca
  * gravou conteúdo real) dá lugar a `scene`, uma lista de itens. Registros v1
  * começam com a cena vazia.
+ *
+ * 2 → 3: itens ganham `options.intervalMs` e `options.fade` (carrossel).
  */
 const MIGRATIONS: Record<number, (record: Record<string, unknown>) => Record<string, unknown>> = {
   1: (record) => {
     const { content: _content, ...rest } = record;
     return { ...rest, scene: emptyScene() };
+  },
+  2: (record) => {
+    // Itens ganham as opções do carrossel (sem efeito nos tipos existentes).
+    const scene = record.scene;
+    if (!isPlainObject(scene) || !Array.isArray(scene.items)) return record;
+    const items = scene.items.map((item: unknown) => {
+      if (!isPlainObject(item) || !isPlainObject(item.options)) return item;
+      return {
+        ...item,
+        options: {
+          intervalMs: CAROUSEL_INTERVAL_DEFAULT_MS,
+          fade: true,
+          ...item.options,
+        },
+      };
+    });
+    return { ...record, scene: { ...scene, items } };
   },
 };
 
@@ -318,6 +390,55 @@ function validateOptions(o: unknown): string | null {
   if (o.clip !== null && (typeof o.clip !== 'string' || o.clip.length === 0 || o.clip.length > 200)) {
     return 'nome da animação inválido.';
   }
+  if (
+    !Number.isInteger(o.intervalMs) ||
+    (o.intervalMs as number) < CAROUSEL_INTERVAL_MIN_MS ||
+    (o.intervalMs as number) > CAROUSEL_INTERVAL_MAX_MS
+  ) {
+    return `intervalMs fora do intervalo ${CAROUSEL_INTERVAL_MIN_MS}–${CAROUSEL_INTERVAL_MAX_MS}.`;
+  }
+  if (typeof o.fade !== 'boolean') return 'fade inválido.';
+  return null;
+}
+
+function validateItemFile(type: ItemType, file: Record<string, unknown>): string | null {
+  const fileProblem = validateFileInfo(file);
+  if (fileProblem) return `arquivo: ${fileProblem}`;
+  if (!ITEM_MIME[type].includes(file.mimeType as string)) {
+    return `tipo de arquivo ${String(file.mimeType)} não é aceito para ${type}.`;
+  }
+  if ((file.size as number) > MAX_ITEM_FILE_BYTES) return 'arquivo grande demais.';
+  if (typeof file.fileName !== 'string' || file.fileName.length === 0 || file.fileName.length > ITEM_FILENAME_MAX_LENGTH) {
+    return 'nome do arquivo inválido.';
+  }
+  for (const key of ['width', 'height', 'durationMs'] as const) {
+    if (file[key] !== undefined && !isPositive(file[key])) return `${key} inválido.`;
+  }
+  return null;
+}
+
+function validateSlides(type: ItemType, file: Record<string, unknown>, slides: unknown): string | null {
+  if (!Array.isArray(slides) || slides.length === 0) return 'carrossel sem imagens.';
+  if (slides.length > MAX_CAROUSEL_SLIDES) return `imagens demais no carrossel (o limite é ${MAX_CAROUSEL_SLIDES}).`;
+  const slots = new Set<number>();
+  let total = 0;
+  for (let index = 0; index < slides.length; index++) {
+    const slide: unknown = slides[index];
+    if (!isPlainObject(slide)) return `imagem ${index + 1}: formato inválido.`;
+    if (!Number.isInteger(slide.slot) || (slide.slot as number) < 0 || (slide.slot as number) > 9999) {
+      return `imagem ${index + 1}: posição de arquivo inválida.`;
+    }
+    if (slots.has(slide.slot as number)) return `imagem ${index + 1}: posição de arquivo repetida.`;
+    slots.add(slide.slot as number);
+    const problem = validateItemFile(type, slide);
+    if (problem) return `imagem ${index + 1}: ${problem}`;
+    total += slide.size as number;
+  }
+  if (total > MAX_CAROUSEL_BYTES) return 'carrossel grande demais.';
+  const first = slides[0] as Record<string, unknown>;
+  for (const key of ['mimeType', 'size', 'sha256', 'fileName'] as const) {
+    if (file[key] !== first[key]) return 'o arquivo do item não corresponde à primeira imagem do carrossel.';
+  }
   return null;
 }
 
@@ -331,17 +452,14 @@ function validateItem(item: unknown): string | null {
 
   const file = item.file;
   if (!isPlainObject(file)) return 'arquivo ausente.';
-  const fileProblem = validateFileInfo(file);
-  if (fileProblem) return `arquivo: ${fileProblem}`;
-  if (!ITEM_MIME[type].includes(file.mimeType as string)) {
-    return `tipo de arquivo ${String(file.mimeType)} não é aceito para ${type}.`;
-  }
-  if ((file.size as number) > MAX_ITEM_FILE_BYTES) return 'arquivo grande demais.';
-  if (typeof file.fileName !== 'string' || file.fileName.length === 0 || file.fileName.length > ITEM_FILENAME_MAX_LENGTH) {
-    return 'nome do arquivo inválido.';
-  }
-  for (const key of ['width', 'height', 'durationMs'] as const) {
-    if (file[key] !== undefined && !isPositive(file[key])) return `${key} inválido.`;
+  const fileProblem = validateItemFile(type, file);
+  if (fileProblem) return fileProblem;
+
+  if (type === 'carousel') {
+    const slidesProblem = validateSlides(type, file, item.slides);
+    if (slidesProblem) return slidesProblem;
+  } else if (item.slides !== undefined) {
+    return 'só carrossel tem slides.';
   }
 
   const transformProblem = validateTransform(item.transform);

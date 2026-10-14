@@ -406,4 +406,6 @@ export const browserLoaders: ItemLoaders = {
   video: loadVideo,
   model: loadModel,
   audio: loadAudio,
+  // Provisório: mostra só a primeira imagem do carrossel (a troca automática vem na etapa seguinte).
+  carousel: loadImage,
 };

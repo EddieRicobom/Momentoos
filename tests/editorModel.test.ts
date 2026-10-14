@@ -20,6 +20,7 @@ const MIME: Record<ItemType, string> = {
   video: 'video/mp4',
   model: 'model/gltf-binary',
   audio: 'audio/mpeg',
+  carousel: 'image/png',
 };
 
 function item(id: string, type: ItemType = 'image'): SceneItem {

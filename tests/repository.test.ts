@@ -175,7 +175,7 @@ describe('updateMeta', () => {
           visible: true,
           file: { mimeType: 'image/png', size: 4, sha256: 'b'.repeat(64), fileName: 'f.png' },
           transform: { scale: 2, rotation: [0, 0, 90] as [number, number, number], position: [0.1, 0, 0] as [number, number, number], offset: [0, 0, 0.05] as [number, number, number] },
-          options: { opacity: 1, loop: true, muted: false, volume: 1, animate: false, clip: null },
+          options: { opacity: 1, loop: true, muted: false, volume: 1, animate: false, clip: null, intervalMs: 3000, fade: true },
         },
       ],
     };
@@ -224,7 +224,7 @@ describe('arquivos de itens', () => {
     visible: true,
     file: { mimeType: 'image/png', size: 64, sha256: 'c'.repeat(64), fileName: `${id}.png` },
     transform: { scale: 1, rotation: [0, 0, 0] as [number, number, number], position: [0, 0, 0] as [number, number, number], offset: [0, 0, 0] as [number, number, number] },
-    options: { opacity: 1, loop: true, muted: false, volume: 1, animate: false, clip: null },
+    options: { opacity: 1, loop: true, muted: false, volume: 1, animate: false, clip: null, intervalMs: 3000, fade: true },
   });
 
   it('grava, lê, substitui e apaga arquivos de item pela chave item:<id>', async () => {
