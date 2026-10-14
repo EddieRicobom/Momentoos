@@ -10,6 +10,7 @@ import {
   type SourceImage,
 } from '../tracking/imagePrep';
 import { compileTarget, inspectTargetBuffer } from '../tracking/targetCompiler';
+import { describeDiagnostics } from '../tracking/targetInfo';
 import type { EnhanceMode } from '../tracking/targetPixels';
 import { statusChip, topBar } from './components';
 import type { AppTarget, View } from './context';
@@ -135,6 +136,13 @@ export const createView: View = (context, root) => {
     'Usar a foto inteira',
   );
   const enhancePreview = h('div', { class: 'stack' });
+  const variantsInput = h('input', { type: 'checkbox', checked: true, class: 'check-input' }) as HTMLInputElement;
+  const variantsLabel = h(
+    'label',
+    { class: 'check-row' },
+    variantsInput,
+    h('span', {}, 'Reconhecer em ângulos fortes e com a pele esticada (recomendado; compila mais devagar e o arquivo fica ~2× maior)'),
+  );
   const compileButton = h(
     'button',
     { class: 'btn btn-primary', type: 'button', onclick: () => void handleCompile() },
@@ -180,6 +188,7 @@ export const createView: View = (context, root) => {
     modeList,
     h('p', { class: 'muted' }, 'É assim que o app vai enxergar a imagem:'),
     enhancePreview,
+    variantsLabel,
     h('div', { class: 'row' }, compileButton),
     progress,
   );
@@ -260,8 +269,10 @@ export const createView: View = (context, root) => {
     let prepared: PreparedTarget | null = null;
     try {
       prepared = await prepareTargetFromSource(source, { crop, enhance: chosenMode });
-      const compiled = await compileTarget(prepared.image, (percent) =>
-        store.dispatch({ type: 'PREPARE_PROGRESS', percent }),
+      const compiled = await compileTarget(
+        prepared.image,
+        (percent) => store.dispatch({ type: 'PREPARE_PROGRESS', percent }),
+        { variants: variantsInput.checked ? undefined : false },
       );
       context.setTarget({
         buffer: compiled.buffer,
@@ -276,6 +287,7 @@ export const createView: View = (context, root) => {
         // recompilar depois reproduz o mesmo alvo.
         referenceImage: { blob: prepared.blob, width: prepared.width, height: prepared.height },
         note: `Recorte: ${crop ? 'sim' : 'foto inteira'} · Contraste: ${modeName(chosenMode)}`,
+        diagnostics: { trackingPoints: compiled.trackingPoints, variantKeyframes: compiled.variantKeyframes },
       });
       nameInput.value = defaultProjectName(undefined, modeName(chosenMode));
       saveError.hidden = true;
@@ -306,6 +318,7 @@ export const createView: View = (context, root) => {
         projectId: null,
         referenceImage: null,
         note: null,
+        diagnostics: { trackingPoints: info.trackingPoints, variantKeyframes: info.variantKeyframes },
       });
       nameInput.value = defaultProjectName(file.name);
       saveError.hidden = true;
@@ -351,6 +364,7 @@ export const createView: View = (context, root) => {
       preview,
       h('p', { class: 'muted' }, details.join(' · ')),
       ...(target.note ? [h('p', { class: 'muted' }, target.note)] : []),
+      ...diagnosticsSection(target),
       ...saveSection(target),
       h(
         'div',
@@ -376,6 +390,15 @@ export const createView: View = (context, root) => {
           ]
         : []),
     );
+  }
+
+  function diagnosticsSection(target: AppTarget): Node[] {
+    if (!target.diagnostics) return [];
+    const text = describeDiagnostics(target.diagnostics, target.referenceImage !== null || target.origin === 'project');
+    return [
+      h('p', { class: 'muted' }, text.summary),
+      ...(text.warning ? [h('p', { class: 'form-error', role: 'note' }, text.warning)] : []),
+    ];
   }
 
   function saveSection(target: AppTarget): Node[] {

@@ -145,8 +145,12 @@ export const projectsView: View = (context, root) => {
         compileMs: null,
         projectId: record.id,
         referenceImage: null,
+        diagnostics: { trackingPoints: info.trackingPoints, variantKeyframes: info.variantKeyframes },
       });
       context.store.dispatch({ type: 'TARGET_LOADED' });
+      if (info.variantKeyframes === 0 && record.referenceImage !== null) {
+        context.toast('Dica: este alvo é antigo. Recompile em "Meus projetos" para reconhecer melhor em ângulos fortes e pele esticada.');
+      }
       context.navigate('camera');
     }
 
