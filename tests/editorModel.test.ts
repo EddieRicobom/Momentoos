@@ -9,6 +9,7 @@ import {
   isDirty,
   moveItem,
   resetTransform,
+  TYPE_LABEL,
 } from '../src/scene/editorModel';
 import { TILT_DEGREES, cameraPose, pointerAngleDeg, pinchedScale, pointerDistance, rayHitsPlane, twistedRotation, wrapDegrees } from '../src/scene/picking';
 import { defaultOptions, defaultTransform, parseProjectRecord, type ItemType, type SceneItem } from '../src/storage/model';
@@ -279,5 +280,55 @@ describe('pinchedScale', () => {
     expect(huge.transform.scale).toBe(5);
     const tiny = applyControl(item('a'), scale, pinchedScale(1, 1000, 1));
     expect(tiny.transform.scale).toBe(0.05);
+  });
+});
+
+describe('carrossel no modelo do editor', () => {
+  const carousel = (): SceneItem => ({
+    ...item('c1', 'carousel'),
+    slides: [
+      { slot: 0, mimeType: 'image/png', size: 8, sha256: 'a'.repeat(64), fileName: 'a.png' },
+      { slot: 3, mimeType: 'image/png', size: 9, sha256: 'b'.repeat(64), fileName: 'b.png' },
+    ],
+  });
+
+  it('é visual (tem posição e opacidade) e só ele tem o tempo de cada imagem', () => {
+    const ids = controlsFor('carousel').map((c) => c.id);
+    expect(ids).toEqual(expect.arrayContaining(['pos-x', 'rot-z', 'scale', 'opacity', 'interval']));
+    expect(ids).not.toContain('volume');
+    for (const type of ['image', 'gif', 'video', 'model', 'audio'] as const) {
+      expect(controlsFor(type).some((c) => c.id === 'interval')).toBe(false);
+    }
+  });
+
+  it('o controle de tempo mostra segundos e grava milissegundos inteiros, preso a 0,5–60 s', () => {
+    const c = control('interval');
+    expect(c.read({ ...carousel(), options: { ...carousel().options, intervalMs: 4500 } })).toBe(4.5);
+    expect(applyControl(carousel(), c, 7.5).options.intervalMs).toBe(7500);
+    expect(applyControl(carousel(), c, 0).options.intervalMs).toBe(500);
+    expect(applyControl(carousel(), c, 999).options.intervalMs).toBe(60000);
+    expect(formatValue(c, 2.5)).toBe('2,5 s');
+  });
+
+  it('intervalo e transição entram no diff como mudança de opções', () => {
+    const saved = [carousel()];
+    const a = [{ ...carousel(), options: { ...carousel().options, intervalMs: 5000 } }];
+    const b = [{ ...carousel(), options: { ...carousel().options, fade: false } }];
+    expect(diffItems(saved, a).get('c1')?.options?.intervalMs).toBe(5000);
+    expect(diffItems(saved, b).get('c1')?.options?.fade).toBe(false);
+    expect(isDirty(saved, [carousel()])).toBe(false);
+  });
+
+  it('cloneItems copia também os slides (sem compartilhar objetos)', () => {
+    const original = carousel();
+    const [copy] = cloneItems([original]);
+    expect(copy?.slides).toEqual(original.slides);
+    expect(copy?.slides).not.toBe(original.slides);
+    expect(copy?.slides?.[0]).not.toBe(original.slides?.[0]);
+    expect(cloneItems([item('i1')])[0]).not.toHaveProperty('slides');
+  });
+
+  it('o nome do tipo é "Carrossel"', () => {
+    expect(TYPE_LABEL.carousel).toBe('Carrossel');
   });
 });

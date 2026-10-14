@@ -71,6 +71,15 @@ Etapa D (cena 3D ancorada):
   referência** (de frente ou inclinada; tocar seleciona, arrastar com um dedo posiciona e
   com **dois dedos** o item selecionado gira (torcendo) e muda de tamanho
   (afastando ou aproximando os dedos).
+- **Carrossel automático**: ao escolher **duas ou mais imagens** (PNG, JPG, WebP) de
+  uma vez, o editor pergunta se você quer um **carrossel** (um item só que troca de
+  imagem sozinho, na ordem escolhida) ou itens separados. Cada carrossel tem o tempo
+  de cada imagem (0,5 a 60 s), transição suave opcional, e dá para acrescentar ou
+  remover imagens depois (até 30 imagens e 100 MB por carrossel). O tempo só corre
+  enquanto a tatuagem está sendo vista; as imagens são abertas sob demanda (a atual e a
+  próxima) e reduzidas a no máximo 1536 px no maior lado para poupar memória.
+  GIF e vídeo não entram no carrossel. Reordenar imagens ainda não existe (remova e
+  adicione de novo).
 - Na câmera, os itens aparecem ancorados quando a tatuagem é reconhecida;
   vídeo, áudio, GIF e animações **tocam ao reconhecer e pausam ao perder**.
   Se o navegador bloquear o autoplay, aparece "Tocar áudio e vídeo".
@@ -146,7 +155,7 @@ repositório (IndexedDB simulado, incluindo atomicidade e registros corrompidos)
 o backup ZIP (inclusive arquivos adulterados, caminhos maliciosos e limites de
 tamanho) e a lógica das telas (DOM simulado); na Etapa D, o modelo da cena, a
 classificação de arquivos, as operações sobre itens, o backup com itens, o
-posicionamento (contas puras e árvore de nós do Three.js) e a lógica do editor e da tela da câmera. **Não** cobrem compilação do
+posicionamento (contas puras e árvore de nós do Three.js), o carrossel (tempo e transição, carregador com decodificação simulada, armazenamento e backup) e a lógica do editor e da tela da câmera. **Não** cobrem compilação do
 MindAR, câmera, rastreamento, decodificação de mídia, WebGL, que dependem de navegador e hardware, nem o
 comportamento real do IndexedDB, do download e do seletor de arquivos do celular. Para isso, siga
 [docs/TESTES-MANUAIS.md](docs/TESTES-MANUAIS.md).
@@ -257,6 +266,11 @@ limitações: [docs/RASTREAMENTO.md](docs/RASTREAMENTO.md).
   só `.glb` (um arquivo), não `.gltf` com arquivos soltos.
 - Vídeo com som e áudio podem exigir um toque (regra de autoplay do navegador,
   mais rígida no iOS, que não foi considerado nos testes).
+- Carrossel: durante a transição suave a imagem seguinte aparece **por cima** da atual
+  (a atual não some antes), então PNGs com transparência deixam a imagem anterior
+  aparecer por trás durante ~0,6 s. Imagem que não abre é pulada com aviso. Nada
+  disso foi visto em navegador real: a troca, a memória com 30 imagens grandes e a
+  fluidez no celular são **não validadas**.
 - Transparência (PNG, WebP, GIF) é desenhada pelo código, mas **não foi testada**; vídeo não tem canal alfa.
 - Muitos itens pesados ao mesmo tempo (vídeos, modelos grandes) podem travar
   celulares modestos; os limites de 100 itens e 48 MB são salvaguardas, não
@@ -287,9 +301,9 @@ src/
     storageInfo.ts        uso/cota e armazenamento persistente
     errors.ts, hash.ts    erros tipados, SHA-256 e ids
   scene/                  Etapa D: cena 3D ancorada
-    placement.ts          escala base, ajuste de GLB, quadro de GIF (puro)
+    placement.ts          escala base, ajuste de GLB, quadro de GIF e de carrossel (puro)
     runtime.ts            monta a cena, toca/pausa ao reconhecer/perder
-    loaders.ts            imagem, GIF, vídeo, GLB e áudio (precisam de navegador)
+    loaders.ts            imagem, GIF, vídeo, GLB, áudio e carrossel (precisam de navegador)
     editorModel.ts        controles, limites e alterações do editor (puro)
     picking.ts            raio × plano, câmera da prévia e matemática do giro (puro)
     gestures.ts           gestos de 1 e 2 dedos da prévia (puro, testado)

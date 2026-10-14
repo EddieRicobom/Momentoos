@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { BASE_ITEM_WIDTH, degToRad, fitPlane, gifFrameIndex, modelFit, placementOf } from '../src/scene/placement';
+import { BASE_ITEM_WIDTH, carouselFrame, degToRad, fitPlane, gifFrameIndex, modelFit, placementOf } from '../src/scene/placement';
 import { applyItemTransform, createItemNodes } from '../src/scene/runtime';
 import { defaultTransform } from '../src/storage/model';
 
@@ -108,5 +108,55 @@ describe('placementOf / applyItemTransform', () => {
     applyItemTransform(nodes, t);
     nodes.root.updateMatrixWorld(true);
     expect(nodes.scale.matrixWorld.equals(once)).toBe(true);
+  });
+});
+
+describe('carouselFrame', () => {
+  const frame = (t: number, count = 3, interval = 3000, fade = true) => carouselFrame(t, count, interval, fade);
+
+  it('sem transição, troca seca no fim de cada intervalo e dá a volta', () => {
+    expect(frame(0, 3, 1000, false)).toEqual({ index: 0, next: null, mix: 0 });
+    expect(frame(999, 3, 1000, false).index).toBe(0);
+    expect(frame(1000, 3, 1000, false).index).toBe(1);
+    expect(frame(2999, 3, 1000, false).index).toBe(2);
+    expect(frame(3000, 3, 1000, false).index).toBe(0);
+    expect(frame(7500, 3, 1000, false).index).toBe(1);
+  });
+
+  it('com transição, o começo do intervalo é o slide inteiro e o fim mistura com o próximo', () => {
+    expect(frame(0)).toEqual({ index: 0, next: null, mix: 0 });
+    expect(frame(2400)).toEqual({ index: 0, next: null, mix: 0 }); // 3000 - 600 = início da transição
+    const middle = frame(2700);
+    expect(middle.index).toBe(0);
+    expect(middle.next).toBe(1);
+    expect(middle.mix).toBeCloseTo(0.5);
+    expect(frame(2999).mix).toBeGreaterThan(0.99);
+    expect(frame(3000)).toEqual({ index: 1, next: null, mix: 0 });
+  });
+
+  it('o último slide faz a transição de volta para o primeiro', () => {
+    const f = carouselFrame(3 * 3000 - 300, 3, 3000, true);
+    expect(f.index).toBe(2);
+    expect(f.next).toBe(0);
+  });
+
+  it('a transição nunca passa de metade do intervalo', () => {
+    // intervalo de 500 ms: transição de 250 ms
+    expect(carouselFrame(249, 2, 500, true)).toEqual({ index: 0, next: null, mix: 0 });
+    const f = carouselFrame(375, 2, 500, true);
+    expect(f.next).toBe(1);
+    expect(f.mix).toBeCloseTo(0.5);
+  });
+
+  it('um slide só nunca faz transição', () => {
+    expect(carouselFrame(2900, 1, 3000, true)).toEqual({ index: 0, next: null, mix: 0 });
+    expect(carouselFrame(123456, 1, 3000, false).index).toBe(0);
+  });
+
+  it('entradas inválidas caem no primeiro slide', () => {
+    expect(carouselFrame(100, 0, 3000, true)).toEqual({ index: 0, next: null, mix: 0 });
+    expect(carouselFrame(100, 3, 0, true)).toEqual({ index: 0, next: null, mix: 0 });
+    expect(carouselFrame(Number.NaN, 3, 1000, false).index).toBe(0);
+    expect(carouselFrame(-1, 3, 1000, false).index).toBe(2); // tempo negativo dá a volta
   });
 });

@@ -22,7 +22,7 @@ export interface Control {
   types?: readonly ItemType[];
 }
 
-const VISUAL: readonly ItemType[] = ['image', 'gif', 'video', 'model'];
+const VISUAL: readonly ItemType[] = ['image', 'gif', 'video', 'model', 'carousel'];
 
 const vec = (
   key: 'position' | 'rotation' | 'offset',
@@ -64,6 +64,18 @@ export const CONTROLS: readonly Control[] = [
   { id: 'off-y', label: 'Deslocamento em Y do item', group: 'offset', min: -0.5, max: 0.5, step: 0.005, unit: 'larg.', ...vec('offset', 1), types: VISUAL },
   { id: 'off-z', label: 'Deslocamento em Z do item', group: 'offset', min: -0.5, max: 0.5, step: 0.005, unit: 'larg.', ...vec('offset', 2), types: VISUAL },
   { id: 'opacity', label: 'Opacidade', group: 'media', min: 0, max: 1, step: 0.01, unit: '', ...option('opacity'), types: VISUAL },
+  {
+    id: 'interval',
+    label: 'Tempo de cada imagem',
+    group: 'media',
+    min: 0.5,
+    max: 60,
+    step: 0.5,
+    unit: 's',
+    types: ['carousel'],
+    read: (item) => item.options.intervalMs / 1000,
+    write: (item, value) => ({ ...item, options: { ...item.options, intervalMs: Math.round(value * 1000) } }),
+  },
   { id: 'volume', label: 'Volume', group: 'media', min: 0, max: 1, step: 0.01, unit: '', ...option('volume'), types: ['video', 'audio'] },
 ];
 
@@ -105,7 +117,7 @@ const sameTransform = (a: ItemTransform, b: ItemTransform): boolean =>
   [0, 1, 2].every((i) => a.rotation[i] === b.rotation[i] && a.position[i] === b.position[i] && a.offset[i] === b.offset[i]);
 
 const sameOptions = (a: ItemOptions, b: ItemOptions): boolean =>
-  a.opacity === b.opacity && a.loop === b.loop && a.muted === b.muted && a.volume === b.volume && a.animate === b.animate && a.clip === b.clip;
+  a.opacity === b.opacity && a.loop === b.loop && a.muted === b.muted && a.volume === b.volume && a.animate === b.animate && a.clip === b.clip && a.intervalMs === b.intervalMs && a.fade === b.fade;
 
 /** O que mudou em cada item do rascunho em relação ao que está salvo. */
 export function diffItems(saved: readonly SceneItem[], draft: readonly SceneItem[]): Map<string, ItemPatch> {
@@ -131,6 +143,7 @@ export const cloneItems = (items: readonly SceneItem[]): SceneItem[] =>
   items.map((item) => ({
     ...item,
     file: { ...item.file },
+    ...(item.slides ? { slides: item.slides.map((slide) => ({ ...slide })) } : {}),
     transform: {
       scale: item.transform.scale,
       rotation: [...item.transform.rotation],

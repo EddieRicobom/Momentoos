@@ -4,13 +4,15 @@ import type { PreviewView } from '../scene/picking';
 import { SceneRuntime, type RuntimeSummary } from '../scene/runtime';
 import { describeProblems, describeSummary } from '../scene/summaryText';
 import {
+  MAX_CAROUSEL_SLIDES,
   MAX_ITEMS_PER_PROJECT,
   MAX_ITEM_FILE_BYTES,
   type ProjectRecord,
   type SceneItem,
 } from '../storage/model';
 import type { ProjectRepository } from '../storage/repository';
-import { addItem, duplicateItem, openItemFile, removeItem, updateItems } from '../storage/scene';
+import { addCarousel, addItem, addSlides, duplicateItem, openItemFile, openSlideFile, removeItem, removeSlide, updateItems } from '../storage/scene';
+import { classifyFile } from '../storage/itemFiles';
 import { topBar } from './components';
 import type { View } from './context';
 import { describeError, formatBytes, h } from './dom';
@@ -49,6 +51,8 @@ export const editorView: View = (context, root) => {
   let view: PreviewView = 'front';
   let playing = false;
   let confirmingRemove = false;
+  /** Várias imagens escolhidas de uma vez, esperando a decisão: carrossel ou itens separados. */
+  let choice: File[] | null = null;
   let summary: RuntimeSummary | null = null;
   const refs = new Map<string, { input: HTMLInputElement; output: HTMLElement; control: Control }>();
 
@@ -66,6 +70,14 @@ export const editorView: View = (context, root) => {
   const frontButton = h('button', { class: 'btn', type: 'button', onclick: () => setView('front') }, 'De frente');
   const tiltedButton = h('button', { class: 'btn', type: 'button', onclick: () => setView('tilted') }, 'Inclinada');
   const playButton = h('button', { class: 'btn', type: 'button', onclick: () => void togglePlay() }, 'Reproduzir mídia');
+  const choiceBox = h('div', { class: 'choice-box', role: 'group', 'aria-label': 'Como adicionar as imagens' });
+  choiceBox.hidden = true;
+  const slideInput = h('input', { type: 'file', multiple: true, accept: '.png,.jpg,.jpeg,.webp', class: 'visually-hidden', 'aria-label': 'Adicionar imagens ao carrossel' });
+  slideInput.addEventListener('change', () => {
+    const files = [...(slideInput.files ?? [])];
+    slideInput.value = '';
+    if (files.length > 0) void addToCarousel(files);
+  });
   const fileInput = h('input', { type: 'file', multiple: true, accept: ACCEPT, class: 'visually-hidden', 'aria-label': 'Adicionar arquivos' });
   fileInput.addEventListener('change', () => {
     const files = [...(fileInput.files ?? [])];
@@ -141,7 +153,25 @@ export const editorView: View = (context, root) => {
     await runtime?.setTracking(playing);
   }
 
+  const isStaticImage = (file: File): boolean => {
+    const kind = classifyFile(file.name, file.type);
+    return kind.ok && kind.type === 'image';
+  };
+
+  /** Arquivos escolhidos: imagens soltas em número ≥ 2 pedem a decisão carrossel × separados. */
   async function addFiles(files: File[]): Promise<void> {
+    const images = files.filter(isStaticImage);
+    if (images.length >= 2) {
+      choice = images;
+      redrawChoice();
+      const others = files.filter((file) => !isStaticImage(file));
+      if (others.length > 0) await addEach(others);
+      return;
+    }
+    await addEach(files);
+  }
+
+  async function addEach(files: File[]): Promise<void> {
     await run(async () => {
       if (!repo || !projectId || !runtime) return;
       say(null);
@@ -164,6 +194,63 @@ export const editorView: View = (context, root) => {
       confirmingRemove = false;
       if (errors.length > 0) say(errors.join('\n'), 'error');
     });
+  }
+
+  async function readFiles(files: File[]): Promise<Array<{ data: ArrayBuffer; fileName: string; mimeType: string }>> {
+    return Promise.all(files.map(async (file) => ({ data: await file.arrayBuffer(), fileName: file.name, mimeType: file.type })));
+  }
+
+  async function addCarouselFrom(files: File[]): Promise<void> {
+    choice = null;
+    redrawChoice();
+    await run(async () => {
+      if (!repo || !projectId || !runtime) return;
+      say(null);
+      if (dirty()) await saveDraft();
+      const result = await addCarousel(repo, projectId, { files: await readFiles(files), name: 'Carrossel' });
+      loadFromRecord(result.record);
+      selectedId = result.item.id;
+      confirmingRemove = false;
+      void runtime.add(cloneItems([result.item])[0]!);
+    });
+  }
+
+  async function addSeparately(files: File[]): Promise<void> {
+    choice = null;
+    redrawChoice();
+    await addEach(files);
+  }
+
+  /** Acrescenta imagens a um carrossel que já existe. */
+  async function addToCarousel(files: File[]): Promise<void> {
+    const item = selected();
+    if (!item || item.type !== 'carousel') return;
+    await run(async () => {
+      if (!repo || !projectId || !runtime) return;
+      say(null);
+      await saveDraft();
+      const result = await addSlides(repo, projectId, item.id, await readFiles(files));
+      reloadItem(result.record, result.item);
+    });
+  }
+
+  async function removeSlideOf(slot: number): Promise<void> {
+    const item = selected();
+    if (!item || item.type !== 'carousel') return;
+    await run(async () => {
+      if (!repo || !projectId || !runtime) return;
+      say(null);
+      await saveDraft();
+      const result = await removeSlide(repo, projectId, item.id, slot);
+      reloadItem(result.record, result.item);
+    });
+  }
+
+  /** O conjunto de arquivos do item mudou: o item é recarregado na prévia. */
+  function reloadItem(next: ProjectRecord, item: SceneItem): void {
+    loadFromRecord(next);
+    runtime?.remove(item.id);
+    void runtime?.add(cloneItems([item])[0]!);
   }
 
   async function duplicateSelected(): Promise<void> {
@@ -273,8 +360,18 @@ export const editorView: View = (context, root) => {
     });
 
     const children: Array<Node | null> = [
-      h('h2', { class: 'card-title' }, `${TYPE_LABEL[item.type]} · ${item.file.fileName}`),
-      h('p', { class: 'muted' }, `${formatBytes(item.file.size)}`),
+      h(
+        'h2',
+        { class: 'card-title' },
+        item.type === 'carousel'
+          ? `${TYPE_LABEL[item.type]} · ${item.slides?.length ?? 0} imagens`
+          : `${TYPE_LABEL[item.type]} · ${item.file.fileName}`,
+      ),
+      h(
+        'p',
+        { class: 'muted' },
+        formatBytes(item.type === 'carousel' ? (item.slides ?? []).reduce((sum, slide) => sum + slide.size, 0) : item.file.size),
+      ),
       h('label', { class: 'field-label' }, 'Nome', nameInput),
       checkbox('Mostrar na câmera', item.visible, (visible) => replaceDraft({ ...selected()!, visible })),
     ];
@@ -313,6 +410,11 @@ export const editorView: View = (context, root) => {
         options.push(h('p', { class: 'muted' }, 'Vídeo com som pode pedir um toque na tela da câmera para tocar (regra do navegador).'));
       }
     }
+    if (item.type === 'carousel') {
+      options.push(
+        checkbox('Transição suave entre as imagens', item.options.fade, (fade) => replaceDraft({ ...selected()!, options: { ...selected()!.options, fade } })),
+      );
+    }
     if (item.type === 'model') {
       options.push(
         checkbox('Tocar as animações do modelo', item.options.animate, (animate) => replaceDraft({ ...selected()!, options: { ...selected()!.options, animate } })),
@@ -332,6 +434,42 @@ export const editorView: View = (context, root) => {
       }
     }
     if (options.length > 0) children.push(h('h3', { class: 'panel-subtitle' }, 'Opções'), ...options);
+
+    if (item.type === 'carousel') {
+      const slides = item.slides ?? [];
+      children.push(
+        h('h3', { class: 'panel-subtitle' }, `Imagens (${slides.length}/${MAX_CAROUSEL_SLIDES})`),
+        h(
+          'ol',
+          { class: 'slide-list' },
+          ...slides.map((slide, index) =>
+            h(
+              'li',
+              { class: 'slide-row' },
+              h('span', { class: 'item-name' }, `${index + 1}. ${slide.fileName}`),
+              h('span', { class: 'muted' }, formatBytes(slide.size)),
+              h(
+                'button',
+                {
+                  class: 'btn btn-ghost',
+                  type: 'button',
+                  disabled: busy || slides.length <= 1,
+                  'aria-label': `Remover a imagem ${index + 1}`,
+                  onclick: () => void removeSlideOf(slide.slot),
+                },
+                'Remover',
+              ),
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { class: 'row' },
+          h('label', { class: 'btn', 'aria-disabled': String(busy || slides.length >= MAX_CAROUSEL_SLIDES) }, 'Adicionar imagens', slideInput),
+        ),
+        h('p', { class: 'muted' }, 'As imagens trocam sozinhas só enquanto a tatuagem está sendo vista; na prévia, use "Reproduzir mídia" para ver a troca. A ordem é a da lista.'),
+      );
+    }
 
     children.push(
       confirmingRemove
@@ -402,6 +540,30 @@ export const editorView: View = (context, root) => {
     );
   }
 
+  function redrawChoice(): void {
+    choiceBox.hidden = choice === null;
+    if (choice === null) {
+      choiceBox.replaceChildren();
+      return;
+    }
+    const files = choice;
+    choiceBox.replaceChildren(
+      h('p', {}, `Você escolheu ${files.length} imagens. Como quer adicioná-las?`),
+      h(
+        'p',
+        { class: 'muted' },
+        `Carrossel: um item só que troca de imagem sozinho, na ordem escolhida (até ${MAX_CAROUSEL_SLIDES} imagens). Separadas: ${files.length} itens, que você posiciona um a um.`,
+      ),
+      h(
+        'div',
+        { class: 'row' },
+        h('button', { class: 'btn btn-primary', type: 'button', disabled: busy, onclick: () => void addCarouselFrom(files) }, 'Carrossel automático'),
+        h('button', { class: 'btn', type: 'button', disabled: busy, onclick: () => void addSeparately(files) }, `${files.length} itens separados`),
+        h('button', { class: 'btn btn-ghost', type: 'button', disabled: busy, onclick: () => { choice = null; redrawChoice(); } }, 'Cancelar'),
+      ),
+    );
+  }
+
   function redrawStatus(): void {
     const line = summary ? describeSummary(summary) : '';
     statusLine.textContent = line;
@@ -416,6 +578,7 @@ export const editorView: View = (context, root) => {
     drawPanel();
     redrawSaveBar();
     redrawStatus();
+    redrawChoice();
     for (const button of [frontButton, tiltedButton, playButton]) button.disabled = busy;
   }
 
@@ -486,6 +649,7 @@ export const editorView: View = (context, root) => {
       items: cloneItems(draft),
       includeHidden: true,
       openFile: async (itemId) => (await openItemFile(repo!, projectId!, itemId)).data,
+      openSlide: async (itemId, slot) => (await openSlideFile(repo!, projectId!, itemId, slot)).data,
       loaders: browserLoaders,
       onChange: (next) => {
         summary = next;
@@ -576,6 +740,7 @@ export const editorView: View = (context, root) => {
             { class: 'muted', id: 'youtube-note' },
             'YouTube e outros links ainda não são suportados: o player deles é uma página (iframe) que não entra na cena 3D e exige internet. Para usar um vídeo, adicione o arquivo MP4 ou WebM de um vídeo que você tenha direito de usar.',
           ),
+          choiceBox,
           message,
         ),
         panel,

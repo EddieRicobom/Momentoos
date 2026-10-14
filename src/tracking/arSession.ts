@@ -16,6 +16,8 @@ export interface ArSessionOptions {
   sceneItems?: readonly SceneItem[];
   /** Bytes (já conferidos) do arquivo de um item. */
   openItemFile?(itemId: string): Promise<ArrayBuffer>;
+  /** Bytes (já conferidos) de uma imagem de carrossel. */
+  openSlideFile?(itemId: string, slot: number): Promise<ArrayBuffer>;
   /** Mostrar a moldura de teste (alinhamento) junto com a cena. */
   showTestObject?: boolean;
   onSceneChange?(summary: RuntimeSummary): void;
@@ -75,6 +77,7 @@ export class ArSession {
       this.runtime = new SceneRuntime({
         items: sceneItems,
         openFile: openItemFile,
+        ...(this.options.openSlideFile ? { openSlide: this.options.openSlideFile } : {}),
         loaders: browserLoaders,
         ...(this.options.onSceneChange ? { onChange: this.options.onSceneChange } : {}),
       });

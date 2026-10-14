@@ -183,6 +183,21 @@ Use só arquivos que você tenha direito de usar.
 | 9.14 | Exporte um backup do projeto, apague o projeto, importe o backup. | O projeto volta com todos os itens, ajustes e arquivos; abre na câmera igual ao original. |
 | 9.15 | Em um navegador sem WebGL ou sem `ImageDecoder` (se tiver como testar). | Sem WebGL, o editor mostra aviso e segue com os controles. Sem `ImageDecoder`, o GIF fica parado, com aviso. |
 
+### 9.16 a 9.23: Carrossel automático
+
+Tenha 5 ou mais fotos (de preferência de câmera, grandes) e 1 PNG com transparência.
+
+| # | O que fazer | Resultado esperado |
+|---|---|---|
+| 9.16 | No editor, escolha **uma** foto. | Entra como imagem comum, sem perguntar nada. |
+| 9.17 | Escolha **3 ou mais** fotos de uma vez. | Aparece a pergunta "Como quer adicioná-las?" com *Carrossel automático*, *N itens separados* e *Cancelar*; nada é gravado antes da resposta. Cancelar descarta. Numa seleção mista (fotos + um GLB), só o GLB entra na hora. |
+| 9.18 | Escolha *Carrossel automático*. | Um item "Carrossel · N imagens" fica selecionado, com a lista de imagens na ordem escolhida, tempo de cada imagem (padrão 3 s) e transição suave ligada. |
+| 9.19 | Na prévia, toque "Reproduzir mídia". Mude o tempo (ex.: 1 s e 10 s) e desligue a transição. | As imagens trocam sozinhas na ordem, dando a volta no fim; o tempo muda ao vivo; sem transição a troca é seca. Anote se há tela preta/vazia ou travada entre imagens. |
+| 9.20 | Acrescente imagens ao carrossel e remova uma do meio e a primeira. Tente remover até sobrar uma. | A lista e a prévia acompanham; com uma imagem só, "Remover" fica desativado. |
+| 9.21 | Abra a câmera e aponte para a tatuagem; cubra-a e recupere. | O carrossel aparece ancorado e troca de imagem **só enquanto a tatuagem é vista**, continuando de onde parou ao recuperar. |
+| 9.22 | Monte um carrossel com 15 a 30 fotos grandes e deixe rodar 2 a 3 voltas na câmera. | Anote: engasgos ao trocar, aumento de memória/aquecimento, fechamento do navegador, imagens puladas com aviso. (As imagens são reduzidas a 1536 px e só a atual e a próxima ficam na memória.) |
+| 9.23 | Com o PNG transparente no carrossel e a transição ligada, observe a troca. | Esperado e documentado: durante ~0,6 s a imagem anterior aparece por trás das áreas transparentes da seguinte. Anote se incomoda. Exporte backup, apague o projeto e importe: o carrossel volta com todas as imagens, tempo e transição. |
+
 Não testado nem previsto: iOS/Safari. Se for o seu caso, anote tudo o que falhar.
 
 ## Critérios propostos para considerar o rastreamento validado
