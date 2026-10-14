@@ -74,7 +74,7 @@ Etapa D (cena 3D ancorada):
 - Na câmera, os itens aparecem ancorados quando a tatuagem é reconhecida;
   vídeo, áudio, GIF e animações **tocam ao reconhecer e pausam ao perder**.
   Se o navegador bloquear o autoplay, aparece "Tocar áudio e vídeo".
-- Os arquivos dos itens ficam no IndexedDB e entram no backup ZIP (formato 2;
+- Os arquivos dos itens ficam no IndexedDB e entram no backup ZIP (formato 3;
   backups do formato 1 continuam importando).
 - **YouTube e links não são suportados**: o player é uma página (iframe) que não
   pode ser desenhada dentro da cena 3D e exige internet. A tela do editor avisa.
