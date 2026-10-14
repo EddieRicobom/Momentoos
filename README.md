@@ -80,6 +80,14 @@ Etapa D (cena 3D ancorada):
   próxima) e reduzidas a no máximo 1536 px no maior lado para poupar memória.
   GIF e vídeo não entram no carrossel. Reordenar imagens ainda não existe (remova e
   adicione de novo).
+- **Giroscópio (opcional)**: na tela da câmera, o botão "Giroscópio" usa o sensor de
+  movimento do aparelho para suavizar o rastreamento: entre uma leitura do MindAR e a
+  seguinte, a pose é girada conforme o giro do celular; as leituras novas são misturadas
+  com essa previsão (menos tremor); e, se a tatuagem sair de vista por um instante, o
+  conteúdo segue o giro do celular por até 0,8 s antes de sumir. Desligado por padrão; a
+  escolha fica salva (no iOS é preciso tocar de novo para dar a permissão). Se o sensor
+  discordar da câmera, o app o desliga sozinho e avisa. **Nunca foi testado em aparelho
+  real**: se ajuda de verdade, só se sabe testando (roteiro Parte 10).
 - Na câmera, os itens aparecem ancorados quando a tatuagem é reconhecida;
   vídeo, áudio, GIF e animações **tocam ao reconhecer e pausam ao perder**.
   Se o navegador bloquear o autoplay, aparece "Tocar áudio e vídeo".
@@ -155,7 +163,7 @@ repositório (IndexedDB simulado, incluindo atomicidade e registros corrompidos)
 o backup ZIP (inclusive arquivos adulterados, caminhos maliciosos e limites de
 tamanho) e a lógica das telas (DOM simulado); na Etapa D, o modelo da cena, a
 classificação de arquivos, as operações sobre itens, o backup com itens, o
-posicionamento (contas puras e árvore de nós do Three.js), o carrossel (tempo e transição, carregador com decodificação simulada, armazenamento e backup) e a lógica do editor e da tela da câmera. **Não** cobrem compilação do
+posicionamento (contas puras e árvore de nós do Three.js), o estabilizador por giroscópio (simulação física de câmera girando, mistura, perda, suspensão), o carrossel (tempo e transição, carregador com decodificação simulada, armazenamento e backup) e a lógica do editor e da tela da câmera. **Não** cobrem compilação do
 MindAR, câmera, rastreamento, decodificação de mídia, WebGL, que dependem de navegador e hardware, nem o
 comportamento real do IndexedDB, do download e do seletor de arquivos do celular. Para isso, siga
 [docs/TESTES-MANUAIS.md](docs/TESTES-MANUAIS.md).
@@ -266,6 +274,15 @@ limitações: [docs/RASTREAMENTO.md](docs/RASTREAMENTO.md).
   só `.glb` (um arquivo), não `.gltf` com arquivos soltos.
 - Vídeo com som e áudio podem exigir um toque (regra de autoplay do navegador,
   mais rígida no iOS, que não foi considerado nos testes).
+- **Giroscópio**: só compensa **rotação** do celular; deslocá-lo (andar, aproximar) não
+  é medido, então nesses casos vale a leitura do rastreador. O sensor acumula erro
+  (por isso o "segurar" após perder a tatuagem é curto, 0,8 s, e durante ele o conteúdo
+  segue o celular, não a tatuagem). Os eixos e sinais de `devicemotion` seguem a
+  especificação, mas variam entre navegadores/aparelhos: o app compara o giroscópio com a
+  câmera e se desliga sozinho se discordarem de forma consistente (isso é um paliativo, não
+  prova de que está certo). Valores de mistura (peso 0,6; limites de 8° e 0,25 largura)
+  são **chutes razoáveis, não calibrados**. No iOS a permissão exige toque e HTTPS.
+  Nada disso foi medido em aparelho real; pode até piorar em alguns celulares.
 - Carrossel: durante a transição suave a imagem seguinte aparece **por cima** da atual
   (a atual não some antes), então PNGs com transparência deixam a imagem anterior
   aparecer por trás durante ~0,6 s. Imagem que não abre é pulada com aviso. Nada
@@ -318,6 +335,9 @@ src/
     cropGeometry.ts       geometria do recorte (puro)
     targetCompiler.ts     compilação e validação do .mind
     arSession.ts          sessão MindARThree (câmera + rastreio)
+    gyro.ts               giroscópio (devicemotion) como fonte de rotação da câmera
+    poseStabilizer.ts     previsão por giroscópio + mistura + "segurar" a pose (puro, testado)
+    anchorAssist.ts       cola entre a âncora do MindAR e o estabilizador
     virtualObject.ts      objeto de teste ancorado
   ui/                     telas e componentes (editorView.ts, previewStage.ts: editor e prévia 3D)
   types/mind-ar.d.ts      tipos escritos à mão para o MindAR

@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { browserLoaders } from '../scene/loaders';
 import { SceneRuntime, type RuntimeSummary } from '../scene/runtime';
 import type { SceneItem } from '../storage/model';
+import { AnchorAssist } from './anchorAssist';
+import type { GyroSource } from './gyro';
 import { createVirtualObject } from './virtualObject';
 
 export interface ArSessionOptions {
@@ -26,6 +28,8 @@ export interface ArSessionOptions {
   onLost(): void;
   /** Taxa de atualizações de rastreio por segundo, enquanto reconhecida. */
   onTrackingRate?(updatesPerSecond: number): void;
+  /** O giroscópio discordou da câmera e foi suspenso (a sessão segue sem ele). */
+  onGyroSuspended?(): void;
 }
 
 /**
@@ -43,6 +47,7 @@ export class ArSession {
   private updateCount = 0;
   private rateTimer: number | null = null;
   private runtime: SceneRuntime | null = null;
+  private assist: AnchorAssist | null = null;
   private testObject: THREE.Group | null = null;
   private readonly clock = new THREE.Clock();
 
@@ -84,16 +89,23 @@ export class ArSession {
       anchor.group.add(this.runtime.group);
     }
 
-    anchor.onTargetFound = () => {
-      void this.runtime?.setTracking(true);
-      this.options.onFound();
-    };
-    anchor.onTargetLost = () => {
-      void this.runtime?.setTracking(false);
-      this.options.onLost();
-    };
+    // Sem giroscópio, "achou/perdeu" passam direto; com ele, a perda é adiada (ver AnchorAssist).
+    this.assist = new AnchorAssist(anchor, {
+      found: () => {
+        void this.runtime?.setTracking(true);
+        this.options.onFound();
+      },
+      lost: () => {
+        void this.runtime?.setTracking(false);
+        this.options.onLost();
+      },
+      suspended: () => this.options.onGyroSuspended?.(),
+    });
+    anchor.onTargetFound = () => this.assist?.handleFound();
+    anchor.onTargetLost = () => this.assist?.handleLost();
     anchor.onTargetUpdate = () => {
       if (anchor.visible) this.updateCount += 1;
+      this.assist?.handleUpdate();
     };
 
     try {
@@ -113,6 +125,7 @@ export class ArSession {
 
     this.clock.start();
     mindar.renderer.setAnimationLoop(() => {
+      this.assist?.handleFrame();
       this.runtime?.update(this.clock.getDelta());
       mindar.renderer.render(mindar.scene, mindar.camera);
     });
@@ -126,6 +139,21 @@ export class ArSession {
     }, 1000);
 
     this.options.onReady();
+  }
+
+  /** Liga (fonte) ou desliga (null) a estabilização por giroscópio durante a sessão. */
+  setGyro(source: GyroSource | null): boolean {
+    if (!this.assist) {
+      source?.stop();
+      return false;
+    }
+    if (source) this.assist.enable(source);
+    else this.assist.disable();
+    return true;
+  }
+
+  get gyroActive(): boolean {
+    return this.assist?.active ?? false;
   }
 
   setTestObjectVisible(visible: boolean): void {
@@ -148,6 +176,8 @@ export class ArSession {
       window.clearInterval(this.rateTimer);
       this.rateTimer = null;
     }
+    this.assist?.dispose();
+    this.assist = null;
     this.runtime?.dispose();
     this.runtime = null;
     const mindar = this.mindar;

@@ -160,11 +160,50 @@ a foto de novo.
 
 ### O que ainda não existe
 
-- Ajuste do **rastreamento ao vivo** (tolerância a perdas, suavização). Os
-  valores atuais são os padrões do MindAR (`warmupTolerance = 5`,
-  `missTolerance = 5`, filtro One Euro).
+- Ajuste do **rastreamento ao vivo** pelos parâmetros do próprio MindAR (tolerância
+  a perdas, filtro). Os valores atuais são os padrões (`warmupTolerance = 5`,
+  `missTolerance = 5`, filtro One Euro). A única camada extra é a estabilização
+  opcional por giroscópio (seção abaixo).
 - Pré-processamento do **quadro da câmera**: o MindAR lê o vídeo direto, e
   filtrá-lo antes custaria desempenho no celular.
+
+## Estabilização por giroscópio (opcional)
+
+Botão "Giroscópio" na tela da câmera (escondido se o aparelho não expõe o sensor).
+**Desligado por padrão e nunca testado em aparelho real.**
+
+Como funciona (`gyro.ts`, `poseStabilizer.ts`, `anchorAssist.ts`):
+
+1. O evento `devicemotion` dá a velocidade angular (`rotationRate`: `beta` em torno
+   de x, `gamma` em torno de y, `alpha` em torno de z, graus/s). Cada amostra vira uma
+   pequena rotação da câmera, no quadro da página (girado pelo ângulo da tela,
+   `screen.orientation.angle`) e acumulada. O tempo vem do relógio entre amostras,
+   não do campo `interval` (que varia entre navegadores).
+2. A cada quadro desenhado, a última pose do alvo (no quadro da câmera) é girada pelo
+   **inverso** da rotação da câmera. Isto só vale para rotação pura: deslocamentos do
+   celular não são medidos.
+3. A cada pose nova do MindAR, a pose prevista e a medida são misturadas
+   (peso da medida 0,6). Se previsão e medida diferem mais de 8° ou 0,25 largura do
+   alvo, vale só a medida.
+4. Se o MindAR perde a tatuagem, a pose é mantida girando só com o giroscópio por até
+   800 ms; o aviso de "perdido" (e a pausa de mídia) só acontece depois disso. Se a
+   tatuagem volta antes, nada é informado.
+5. **Verificação de concordância**: a cada leitura com giro ≥ 1,5°, compara-se se a
+   previsão aproximou ou afastou a pose da medida. Se, nas últimas 16 comparações
+   (mínimo 10), ≥ 70% afastaram, o giroscópio é suspenso (poses passam sem
+   alteração), o botão desliga e a tela avisa. Isto pega sinal/eixo trocados, mas
+   também pode desligar um sensor correto em movimento muito brusco ou com translação
+   dominante.
+
+Fórmulas conferidas em teste com uma câmera simulada que gira: a pose prevista bate
+com a pose verdadeira para giros em x, y, z e eixos livres. O que **não** foi verificado:
+as convenções reais de `rotationRate` em cada navegador, o atraso entre o quadro da câmera
+e a leitura do sensor (não compensado), o ganho de suavidade no mundo real e o efeito
+em celulares específicos.
+
+Permissão: iOS 13+ exige `DeviceMotionEvent.requestPermission()` num toque e HTTPS; o
+app só pede quando o botão é tocado. Em Android/Chrome não há pergunta; o app confirma que
+chegam amostras com dados em até 1,5 s, senão informa "sem dados".
 
 ## Posicionando conteúdo virtual (Etapa D)
 
