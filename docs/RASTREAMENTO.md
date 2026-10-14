@@ -167,6 +167,37 @@ a foto de novo.
 - Pré-processamento do **quadro da câmera**: o MindAR lê o vídeo direto, e
   filtrá-lo antes custaria desempenho no celular.
 
+## Estabilidade da pose (tremor e piscar)
+
+**Causa encontrada no código**: o filtro interno do MindAR (OneEuro) vem com `filterMinCF = 0.001` e
+`filterBeta = 1000` sobre valores em pixels do alvo. Com beta tão alto, qualquer movimento de
+1 px já faz o corte do filtro subir a ponto de quase nada ser suavizado: na prática a pose do
+rastreador, com todo o ruído, ia direto para a cena. Além disso, o conteúdo era escondido 5 quadros
+depois de o rastreador falhar, então uma falha curta fazia o conteúdo piscar (e pausar/tocar mídia).
+
+O que o app faz agora (`poseSmoother.ts`, `anchorAssist.ts`, `arSession.ts`, `frameMode.ts`):
+
+- **Suavizador de pose**, sempre ligado (com ou sem giroscópio). A cada leitura mede a distância
+  (em larguras do alvo) entre a pose medida e a que está sendo mostrada: pequena = ruído, a pose
+  anda só 12% do caminho; grande (a partir de 0,6% até 3,5% da largura) = movimento de verdade,
+  o passo cresce até 1 e acompanha sem atraso. Interpola a matriz elemento a elemento, então vale
+  também para a pose flexível (esticada).
+- **Graça na perda**: quando o MindAR desiste, a última pose fica por 450 ms antes de informar
+  "perdeu"; se o rastreador volta nesse intervalo, nada é informado (sem piscar nem pausar mídia).
+- **Tempos do MindAR**: confirma o reconhecimento com 6 quadros (antes 5; reduz falso alarme) e só
+  desiste depois de 10 quadros sem rastrear (antes 5).
+- **Contraste normalizado só ao procurar**: alternar quadros normalizados e crus *durante o
+  rastreio* fazia a pose pular a cada quadro (o rastreador casa o desenho em imagens com contraste
+  diferente). Agora, depois de reconhecida, só quadros crus.
+
+Verificação: testes com ruído sintético (desvio da pose cai para menos de 1/3), degrau, movimento
+rápido, pausa longa, graça e retorno dentro dela. **Não foi medido em celular real**: os valores
+(12%, 0,6%–3,5%, 450 ms) são escolhas razoáveis, não calibradas. Se ainda tremer, o primeiro a
+baixar é `minAlpha` em `DEFAULT_SMOOTHER`; se o conteúdo "arrastar" atrás do movimento, subir
+`kneeStart`/`minAlpha`. Com o giroscópio ligado, o suavizador vem antes do estabilizador; o
+estabilizador decompõe a pose em rotação + escala e por isso **descarta o esticar/achatar** da pose
+flexível enquanto está ligado.
+
 ## Estabilização por giroscópio (opcional)
 
 Botão "Giroscópio" na tela da câmera (escondido se o aparelho não expõe o sensor).

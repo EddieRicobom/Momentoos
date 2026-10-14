@@ -95,6 +95,13 @@ Etapa D (cena 3D ancorada):
   **sintéticas** o reconhecimento confirmado foi de 64 para 157 de 172 casos (sem a normalização de contraste, medida à parte); **não foi
   testado em tatuagem real** (ver `docs/DETECCAO.md` e a Parte 11 do roteiro). Alvos
   antigos continuam funcionando; recompile para ganhar as variantes.
+- **Rastreio mais firme**: suavizador de pose próprio (o filtro do MindAR vem praticamente
+  desligado), graça de 450 ms ao perder a tatuagem (sem piscar) e contraste normalizado só
+  durante a busca. Só testado com ruído sintético, **não em aparelho real** (ver
+  `docs/RASTREAMENTO.md`, "Estabilidade da pose").
+- **Editor mais fácil**: prévia fixa e grande no topo, ímãs e guias no centro e nas bordas do alvo,
+  setas de mover (passo fino), botões +/− e "Centralizar", desfazer/refazer. Interface refeita
+  (tela inicial, projetos, editor, câmera com menos poluição).
 - Na câmera, os itens aparecem ancorados quando a tatuagem é reconhecida;
   vídeo, áudio, GIF e animações **tocam ao reconhecer e pausam ao perder**.
   Se o navegador bloquear o autoplay, aparece "Tocar áudio e vídeo".
@@ -351,6 +358,8 @@ src/
     patch/                arquivos do MindAR trocados pelo plugin do vite.config.ts
     arSession.ts          sessão MindARThree (câmera + rastreio)
     gyro.ts               giroscópio (devicemotion) como fonte de rotação da câmera
+    poseSmoother.ts       suavizador de pose (tremor) por distância dos cantos do alvo (puro)
+    frameMode.ts          modo do quadro: procurando (normaliza) × rastreando (cru)
     poseStabilizer.ts     previsão por giroscópio + mistura + "segurar" a pose (puro, testado)
     anchorAssist.ts       cola entre a âncora do MindAR e o estabilizador
     virtualObject.ts      objeto de teste ancorado
@@ -358,6 +367,7 @@ src/
   types/mind-ar.d.ts      tipos escritos à mão para o MindAR
 tests/                    testes automatizados
 tools/detect-lab/         laboratório de detecção (Chromium headless; ver docs/DETECCAO.md)
+tools/ui-lab/             renderiza as telas reais num Chromium com projeto de exemplo (capturas de tela)
 docs/                     rastreamento, formato de backup e roteiro de testes manuais
 stubs/canvas/             pacote vazio que substitui o node-canvas
 ```

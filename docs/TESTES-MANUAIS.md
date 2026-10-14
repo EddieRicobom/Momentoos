@@ -239,6 +239,23 @@ sintéticos; aqui é que se descobre se vale na pele real. Anote aparelho, naveg
 | 11.7 | Deixe a câmera procurando (sem tatuagem à vista) por 2 min e olhe fluidez e calor. | Sem travar nem aquecer demais; compare com o alvo antigo. |
 | 11.8 | Reconhecimento com a tatuagem parada: tempo até o conteúdo aparecer. | Algumas dezenas de quadros no máximo; anote se o novo demora mais que o antigo. |
 
+## Parte 12: Estabilidade do rastreio, editor e visual novo
+
+Nada disto foi medido em aparelho real. Anote aparelho, navegador e luz.
+
+| # | O que fazer | Resultado esperado |
+|---|---|---|
+| 12.1 | Câmera parada apontando para a tatuagem (apoie o celular), 30 s. | O conteúdo fica firme: tremor de poucos pixels no máximo. Anote se ainda treme (e quanto). |
+| 12.2 | Mova o celular devagar e depressa. | O conteúdo acompanha sem "arrastar" atrás. Anote se há atraso perceptível. |
+| 12.3 | Cubra a tatuagem por ~0,3 s com a mão e descubra. | Nada pisca; vídeo/áudio não pausam e retomam. Cubra por 2 s: some e volta. |
+| 12.4 | Olhe a tela da câmera: só o indicador de estado e dicas, sem números mudando. | "Diagnóstico" mostra perdas/recuperações/atualizações por segundo quando ligado. |
+| 12.5 | Editor: a prévia fica fixa no topo enquanto você rola os controles. | Dá para ajustar tamanho/giro vendo o resultado. |
+| 12.6 | Arraste um item perto do centro e das bordas do alvo. | Ele gruda; a cruz do centro acende; vibração curta (Android). |
+| 12.7 | Setas: toque e segure; ligue "Passo fino". | Move 1% por passo (0,2% no fino) e repete ao segurar. |
+| 12.8 | Botões +/− de Tamanho e Giro, "Centralizar", "−15°/+15°", "100%". | Cada um faz só o que diz. |
+| 12.9 | Desfazer/refazer (setas no topo) depois de arrastar e de mexer em sliders. | Cada gesto contínuo volta de uma vez; um ajuste novo depois de desfazer apaga o "refazer". |
+| 12.10 | Use o app com uma mão no celular: alcança os botões principais? | Anote o que ficou difícil de alcançar. |
+
 ## Critérios propostos para considerar o rastreamento validado
 
 **Proposta para sua aprovação, não uma regra estabelecida.** O rastreamento só

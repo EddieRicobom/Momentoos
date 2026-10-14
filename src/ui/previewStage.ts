@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import { GestureTracker } from '../scene/gestures';
 import { cameraPose, rayHitsPlane, type Point, type PreviewView } from '../scene/picking';
+import { snapAngle, snapPosition } from '../scene/snapping';
 import type { SceneRuntime } from '../scene/runtime';
 
 /**
  * Prévia 3D do editor: a foto de referência (o alvo, 1 unidade de largura) num
  * plano, com os itens da cena por cima, vista de frente ou inclinada. Tocar
- * seleciona um item; arrastar com um dedo o move no plano da pele; girar dois
- * dedos gira o item selecionado (em Z) e afastar/aproximar os dedos muda o tamanho.
+ * seleciona um item; arrastar com um dedo o move no plano da pele (com ímãs no
+ * centro e nas bordas do alvo, e guias na tela); girar dois dedos gira o item
+ * selecionado (em Z, com ímã em 0/45/90°) e afastar/aproximar os dedos muda o tamanho.
  *
  * Esta é a única parte do editor que depende de WebGL, e NÃO foi exercitada em
  * navegador real (os testes substituem este módulo). Se o WebGL não existir,
@@ -92,6 +94,36 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
   selectionHelper.visible = false;
   scene.add(selectionHelper);
 
+  // Cruz do centro do alvo (discreta) que acende quando o item gruda nela.
+  const half = targetAspect / 2;
+  const crossGeometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, -half * 1.04, 0.0005),
+    new THREE.Vector3(0, half * 1.04, 0.0005),
+    new THREE.Vector3(-0.52, 0, 0.0005),
+    new THREE.Vector3(0.52, 0, 0.0005),
+  ]);
+  const crossMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22 });
+  const cross = new THREE.LineSegments(crossGeometry, crossMaterial);
+  scene.add(cross);
+  const outlineMaterial = outline.material as THREE.LineBasicMaterial;
+
+  let wasSnapped = false;
+  const showGuides = (snappedX: boolean, snappedY: boolean, edge: boolean): void => {
+    const on = snappedX || snappedY;
+    crossMaterial.opacity = on ? 0.95 : 0.22;
+    crossMaterial.color.set(on ? ACCENT : 0xffffff);
+    outlineMaterial.color.set(edge ? 0xffffff : ACCENT);
+    if (on && !wasSnapped) {
+      try {
+        navigator.vibrate?.(8);
+      } catch {
+        /* vibração é só um agrado */
+      }
+    }
+    wasSnapped = on;
+  };
+  const hideGuides = (): void => showGuides(false, false, false);
+
   function applyCamera(): void {
     const width = container.clientWidth || 1;
     const height = container.clientHeight || 1;
@@ -145,14 +177,22 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       return (next) => {
         setRay(next);
         const hit = planeHit(planeZ);
-        if (hit) options.onDrag(id, hit[0] - grabX, hit[1] - grabY);
+        if (!hit) return;
+        const snap = snapPosition(hit[0] - grabX, hit[1] - grabY, targetAspect);
+        showGuides(snap.snappedX && snap.x === 0, snap.snappedY && snap.y === 0, (snap.snappedX && snap.x !== 0) || (snap.snappedY && snap.y !== 0));
+        options.onDrag(id, snap.x, snap.y);
       };
     },
     selectedId: options.getSelectedId,
     rotationZ: options.getRotationZ,
-    rotate: options.onRotate,
+    rotate(id, degrees) {
+      const snap = snapAngle(degrees);
+      showGuides(snap.snapped, false, false);
+      options.onRotate(id, snap.degrees);
+    },
     scaleOf: options.getScale,
     rescale: options.onScale,
+    end: hideGuides,
   });
 
   const toPoint = (event: PointerEvent): Point => ({ x: event.clientX, y: event.clientY });
@@ -217,6 +257,8 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       outline.geometry.dispose();
       (outline.material as THREE.Material).dispose();
       selectionHelper.dispose();
+      crossGeometry.dispose();
+      crossMaterial.dispose();
       if (imageUrl) URL.revokeObjectURL(imageUrl);
       renderer.dispose();
       canvas.remove();

@@ -332,3 +332,29 @@ describe('carrossel no modelo do editor', () => {
     expect(TYPE_LABEL.carousel).toBe('Carrossel');
   });
 });
+
+import { CONTROLS as ALL_CONTROLS, nudgeStep } from '../src/scene/editorModel';
+
+describe('nudgeStep', () => {
+  const control = (id: string) => ALL_CONTROLS.find((c) => c.id === id)!;
+
+  it('posição: 0,01 de largura por toque; fino 0,002', () => {
+    expect(nudgeStep(control('pos-x'))).toBeCloseTo(0.01, 6);
+    expect(nudgeStep(control('pos-x'), true)).toBeCloseTo(0.002, 6);
+  });
+
+  it('giro: 2 graus por toque', () => {
+    expect(nudgeStep(control('rot-z'))).toBe(2);
+  });
+
+  it('tamanho: 0,02 por toque', () => {
+    expect(nudgeStep(control('scale'))).toBeCloseTo(0.02, 6);
+  });
+
+  it('nunca é menor que meio passo do controle', () => {
+    for (const c of ALL_CONTROLS) {
+      expect(nudgeStep(c, true)).toBeGreaterThanOrEqual(c.step);
+      expect(nudgeStep(c)).toBeGreaterThanOrEqual(c.step);
+    }
+  });
+});

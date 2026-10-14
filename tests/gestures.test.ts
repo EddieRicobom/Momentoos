@@ -6,6 +6,7 @@ import type { Point } from '../src/scene/picking';
 function setup(options: { selected?: string | null; rotations?: Record<string, number | null> } = {}) {
   const log: string[] = [];
   const scales: string[] = [];
+  const ends: string[] = [];
   let selected: string | null = options.selected === undefined ? null : options.selected;
   const rotations: Record<string, number | null> = { a: 0, b: 40, audio: null, ...options.rotations };
   const host: GestureHost = {
@@ -20,8 +21,9 @@ function setup(options: { selected?: string | null; rotations?: Record<string, n
     rotate: (id, deg) => log.push(`rotate:${id}:${Math.round(deg)}`),
     scaleOf: (id) => (id === 'a' ? 1 : id === 'b' ? 2 : null),
     rescale: (id, value) => scales.push(`${id}:${value.toFixed(2)}`),
+    end: () => ends.push('end'),
   };
-  return { tracker: new GestureTracker(host), log, scales, selected: () => selected };
+  return { tracker: new GestureTracker(host), log, scales, ends, selected: () => selected };
 }
 
 describe('um dedo', () => {
@@ -289,5 +291,31 @@ describe('itens que só aceitam um dos dois ajustes', () => {
 
   it('só tamanho: não chama o giro', () => {
     expect(custom(null, 1)).toEqual(['rescale']);
+  });
+});
+
+describe('fim do gesto (guias da prévia)', () => {
+  it('avisa quando um arrasto termina', () => {
+    const { tracker, ends } = setup();
+    tracker.down(1, { x: 0, y: 0 });
+    tracker.move(1, { x: 5, y: 3 });
+    tracker.up(1);
+    expect(ends).toHaveLength(1);
+  });
+
+  it('avisa uma vez quando o gesto de dois dedos termina', () => {
+    const { tracker, ends } = setup({ selected: 'a' });
+    tracker.down(1, { x: 0, y: 0 });
+    tracker.down(2, { x: 100, y: 0 });
+    tracker.up(2);
+    tracker.up(1);
+    expect(ends).toHaveLength(1);
+  });
+
+  it('toque em área vazia não conta como gesto', () => {
+    const { tracker, ends } = setup({ selected: 'a' });
+    tracker.down(1, { x: 300, y: 300 });
+    tracker.up(1);
+    expect(ends).toHaveLength(0);
   });
 });

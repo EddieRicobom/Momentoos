@@ -1,4 +1,4 @@
-import { CONTROLS, applyControl, cloneItems, controlsFor, diffItems, formatValue, isDirty, moveItem, resetTransform, TYPE_LABEL, type Control } from '../scene/editorModel';
+import { CONTROLS, applyControl, cloneItems, controlsFor, diffItems, formatValue, isDirty, moveItem, nudgeStep, resetTransform, TYPE_LABEL, type Control } from '../scene/editorModel';
 import { browserLoaders } from '../scene/loaders';
 import type { PreviewView } from '../scene/picking';
 import { SceneRuntime, type RuntimeSummary } from '../scene/runtime';
@@ -14,18 +14,12 @@ import type { ProjectRepository } from '../storage/repository';
 import { addCarousel, addItem, addSlides, duplicateItem, openItemFile, openSlideFile, removeItem, removeSlide, updateItems } from '../storage/scene';
 import { classifyFile } from '../storage/itemFiles';
 import { topBar } from './components';
+import { icon } from './icons';
 import type { View } from './context';
 import { describeError, formatBytes, h } from './dom';
 import { createPreviewStage, type PreviewStage } from './previewStage';
 
 const ACCEPT = '.png,.jpg,.jpeg,.webp,.gif,.mp4,.m4v,.webm,.glb,.mp3,.ogg,.oga,.wav,.m4a';
-
-const GROUP_TITLES: Record<string, string> = {
-  position: 'Posição na tatuagem',
-  rotation: 'Giro e inclinação',
-  size: 'Tamanho',
-  media: 'Mídia',
-};
 
 /**
  * Editor da cena de um projeto: lista de itens, prévia 3D sobre a foto de
@@ -55,10 +49,20 @@ export const editorView: View = (context, root) => {
   let choice: File[] | null = null;
   let summary: RuntimeSummary | null = null;
   const refs = new Map<string, { input: HTMLInputElement; output: HTMLElement; control: Control }>();
+  /** Histórico de desfazer/refazer (só ajustes; adicionar/remover itens zera o histórico). */
+  let undoStack: SceneItem[][] = [];
+  let redoStack: SceneItem[][] = [];
+  let lastRememberedAt = 0;
+  /** Setas e botões +/−: passo pequeno. */
+  let fine = false;
 
   const stageBox = h('div', { class: 'editor-stage' });
-  const stageNote = h('p', { class: 'muted', role: 'status' });
+  const stageNote = h('p', { class: 'muted stage-note', role: 'status' });
   stageNote.hidden = true;
+  const undoButton = h('button', { class: 'btn btn-icon', type: 'button', 'aria-label': 'Desfazer', title: 'Desfazer', onclick: () => stepHistory(-1) }, icon('undo'));
+  const redoButton = h('button', { class: 'btn btn-icon', type: 'button', 'aria-label': 'Refazer', title: 'Refazer', onclick: () => stepHistory(1) }, icon('redo'));
+  undoButton.disabled = true;
+  redoButton.disabled = true;
   const statusLine = h('p', { class: 'muted editor-status', role: 'status' });
   const problems = h('ul', { class: 'editor-problems' });
   const message = h('p', { role: 'status' });
@@ -69,7 +73,7 @@ export const editorView: View = (context, root) => {
   const counter = h('span', { class: 'muted' });
   const frontButton = h('button', { class: 'btn', type: 'button', onclick: () => setView('front') }, 'De frente');
   const tiltedButton = h('button', { class: 'btn', type: 'button', onclick: () => setView('tilted') }, 'Inclinada');
-  const playButton = h('button', { class: 'btn', type: 'button', onclick: () => void togglePlay() }, 'Reproduzir mídia');
+  const playButton = h('button', { class: 'btn btn-play', type: 'button', onclick: () => void togglePlay() }, 'Reproduzir mídia');
   const choiceBox = h('div', { class: 'choice-box', role: 'group', 'aria-label': 'Como adicionar as imagens' });
   choiceBox.hidden = true;
   const slideInput = h('input', { type: 'file', multiple: true, accept: '.png,.jpg,.jpeg,.webp', class: 'visually-hidden', 'aria-label': 'Adicionar imagens ao carrossel' });
@@ -84,6 +88,14 @@ export const editorView: View = (context, root) => {
     fileInput.value = '';
     if (files.length > 0) void addFiles(files);
   });
+
+  const addLabel = h(
+    'label',
+    { class: 'btn btn-primary btn-small add-chip' },
+    icon('plus'),
+    'Adicionar arquivos',
+    fileInput,
+  );
 
   // ------------------------------------------------------------------ mensagens
 
@@ -113,7 +125,50 @@ export const editorView: View = (context, root) => {
   const selected = (): SceneItem | null => draft.find((item) => item.id === selectedId) ?? null;
   const dirty = (): boolean => isDirty(saved, draft);
 
+  /**
+   * Guarda o estado atual para "Desfazer" antes de uma mudança. Mudanças em
+   * sequência (arrastar, segurar uma seta) valem como UMA: um novo ponto só
+   * é guardado depois de uma pausa.
+   */
+  function remember(): void {
+    const now = Date.now();
+    if (undoStack.length === 0 || now - lastRememberedAt > 700) {
+      undoStack.push(cloneItems(draft));
+      if (undoStack.length > 80) undoStack.shift();
+      redoStack = [];
+    }
+    lastRememberedAt = now;
+    redrawHistory();
+  }
+
+  function resetHistory(): void {
+    undoStack = [];
+    redoStack = [];
+    lastRememberedAt = 0;
+    redrawHistory();
+  }
+
+  function redrawHistory(): void {
+    undoButton.disabled = busy || undoStack.length === 0;
+    redoButton.disabled = busy || redoStack.length === 0;
+  }
+
+  /** Volta (-1) ou refaz (+1). Só mexe em itens que ainda existem. */
+  function stepHistory(direction: -1 | 1): void {
+    const from = direction === -1 ? undoStack : redoStack;
+    const to = direction === -1 ? redoStack : undoStack;
+    const snapshot = from.pop();
+    if (!snapshot) return;
+    to.push(cloneItems(draft));
+    const byId = new Map(snapshot.map((item) => [item.id, item]));
+    draft = draft.map((item) => byId.get(item.id) ?? item);
+    for (const item of draft) runtime?.updateItem(item);
+    lastRememberedAt = 0;
+    redrawAll();
+  }
+
   function replaceDraft(next: SceneItem): void {
+    remember();
     draft = draft.map((item) => (item.id === next.id ? next : item));
     runtime?.updateItem(next);
     syncControls(next);
@@ -122,6 +177,7 @@ export const editorView: View = (context, root) => {
   }
 
   function loadFromRecord(next: ProjectRecord): void {
+    resetHistory();
     record = next;
     saved = cloneItems(next.scene.items);
     draft = cloneItems(next.scene.items);
@@ -289,6 +345,7 @@ export const editorView: View = (context, root) => {
   }
 
   function discard(): void {
+    remember();
     draft = cloneItems(saved);
     for (const item of draft) runtime?.updateItem(item);
     say('Alterações desfeitas.');
@@ -297,13 +354,50 @@ export const editorView: View = (context, root) => {
 
   // ------------------------------------------------------------------ controles
 
+  const percentOf = (control: Control, value: number): string =>
+    `${Math.min(100, Math.max(0, ((value - control.min) / (control.max - control.min)) * 100))}%`;
+
   function syncControls(item: SceneItem): void {
     if (item.id !== selectedId) return;
     for (const { input, output, control } of refs.values()) {
       const value = control.read(item);
       input.value = String(value);
+      input.style.setProperty('--fill', percentOf(control, value));
       output.textContent = formatValue(control, value);
     }
+  }
+
+  /** Botão que repete enquanto o dedo está sobre ele (primeiro toque imediato, depois acelera). */
+  function repeating(button: HTMLButtonElement, action: () => void): HTMLButtonElement {
+    let delay: number | null = null;
+    let timer: number | null = null;
+    const stop = (): void => {
+      if (delay !== null) window.clearTimeout(delay);
+      if (timer !== null) window.clearInterval(timer);
+      delay = null;
+      timer = null;
+    };
+    button.addEventListener('pointerdown', (event) => {
+      if (event.button !== undefined && event.button > 0) return;
+      stop();
+      action();
+      delay = window.setTimeout(() => {
+        timer = window.setInterval(action, 70);
+      }, 380);
+    });
+    for (const type of ['pointerup', 'pointerleave', 'pointercancel']) button.addEventListener(type, stop);
+    // Teclado/leitor de tela: o clique sem ponteiro (detail 0) faz um passo.
+    button.addEventListener('click', (event) => {
+      if (event.detail === 0) action();
+    });
+    return button;
+  }
+
+  function stepControl(control: Control, direction: 1 | -1): void {
+    const current = selected();
+    if (!current) return;
+    const next = applyControl(current, control, control.read(current) + direction * nudgeStep(control, fine));
+    if (control.read(next) !== control.read(current)) replaceDraft(next);
   }
 
   function sliderRow(item: SceneItem, control: Control): HTMLElement {
@@ -317,23 +411,114 @@ export const editorView: View = (context, root) => {
       value,
       'aria-label': control.label,
     });
+    input.style.setProperty('--fill', percentOf(control, value));
     input.addEventListener('input', () => {
       const current = selected();
       if (!current) return;
+      remember();
       const next = applyControl(current, control, Number(input.value));
       output.textContent = formatValue(control, control.read(next));
+      input.style.setProperty('--fill', percentOf(control, control.read(next)));
       draft = draft.map((candidate) => (candidate.id === next.id ? next : candidate));
       runtime?.updateItem(next);
       redrawSaveBar();
     });
     refs.set(control.id, { input, output, control });
-    return h('label', { class: 'slider' }, h('span', { class: 'slider-label' }, control.label), input, output);
+    const stepper = (sign: '−' | '+', direction: 1 | -1): HTMLButtonElement =>
+      repeating(
+        h('button', { class: 'btn step', type: 'button', 'aria-label': `${direction === 1 ? 'Aumentar' : 'Diminuir'} ${control.label}` }, sign),
+        () => stepControl(control, direction),
+      );
+    return h(
+      'div',
+      { class: 'slider' },
+      h('span', { class: 'slider-label' }, control.label),
+      output,
+      h('div', { class: 'slider-track' }, stepper('−', -1), input, stepper('+', 1)),
+    );
   }
 
   function checkbox(label: string, checked: boolean, onChange: (value: boolean) => void): HTMLElement {
     const input = h('input', { type: 'checkbox', checked, class: 'check-input' });
     input.addEventListener('change', () => onChange(input.checked));
     return h('label', { class: 'check-row' }, input, h('span', {}, label));
+  }
+
+  /** Move o item selecionado `dx`/`dy` (larguras do alvo). */
+  function nudgePosition(dx: number, dy: number): void {
+    const current = selected();
+    if (!current) return;
+    const px = CONTROLS.find((c) => c.id === 'pos-x')!;
+    const py = CONTROLS.find((c) => c.id === 'pos-y')!;
+    replaceDraft(moveItem(current, px.read(current) + dx, py.read(current) + dy));
+  }
+
+  function moveBlock(): HTMLElement {
+    const px = CONTROLS.find((c) => c.id === 'pos-x')!;
+    const amount = (): number => nudgeStep(px, fine);
+    const arrow = (name: 'up' | 'down' | 'left' | 'right', label: string, dx: 1 | 0 | -1, dy: 1 | 0 | -1): HTMLButtonElement =>
+      repeating(
+        h('button', { class: `btn dpad-${name}`, type: 'button', 'aria-label': label }, icon(name)),
+        () => nudgePosition(dx * amount(), dy * amount()),
+      );
+    const fineToggle = h(
+      'button',
+      {
+        class: 'btn toggle',
+        type: 'button',
+        'aria-pressed': String(fine),
+        onclick: () => {
+          fine = !fine;
+          drawPanel();
+        },
+      },
+      'Passo fino',
+    );
+    return h(
+      'div',
+      { class: 'move-block' },
+      h(
+        'div',
+        { class: 'dpad', role: 'group', 'aria-label': 'Mover o item' },
+        arrow('up', 'Mover para cima', 0, 1),
+        arrow('left', 'Mover para a esquerda', -1, 0),
+        h('span', { class: 'btn dpad-center', 'aria-hidden': 'true' }, fine ? '0,2%' : '1%'),
+        arrow('right', 'Mover para a direita', 1, 0),
+        arrow('down', 'Mover para baixo', 0, -1),
+      ),
+      h('div', { class: 'move-side' }, fineToggle, h('p', { class: 'muted' }, 'Arraste o item na prévia ou use as setas (segure para repetir). Ele gruda no centro e nas bordas do alvo.')),
+    );
+  }
+
+  function quickRow(item: SceneItem): HTMLElement {
+    const rotZ = CONTROLS.find((c) => c.id === 'rot-z')!;
+    const scale = CONTROLS.find((c) => c.id === 'scale')!;
+    const quick = (name: Parameters<typeof icon>[0], label: string, action: () => void): HTMLButtonElement =>
+      h('button', { class: 'btn', type: 'button', onclick: action }, icon(name), h('span', {}, label));
+    return h(
+      'div',
+      { class: 'quick-row' },
+      quick('center', 'Centralizar', () => {
+        const current = selected();
+        if (current) replaceDraft(moveItem(current, 0, 0));
+      }),
+      quick('rotateLeft', '−15°', () => {
+        const current = selected();
+        if (current) replaceDraft(applyControl(current, rotZ, wrap(rotZ.read(current) + 15)));
+      }),
+      quick('rotateRight', '+15°', () => {
+        const current = selected();
+        if (current) replaceDraft(applyControl(current, rotZ, wrap(rotZ.read(current) - 15)));
+      }),
+      quick('resize', '100%', () => {
+        const current = selected();
+        if (current) replaceDraft(applyControl(current, scale, 1));
+      }),
+    );
+    function wrap(degrees: number): number {
+      return ((((degrees + 180) % 360) + 360) % 360) - 180;
+    }
+    void item;
   }
 
   function drawPanel(): void {
@@ -359,6 +544,12 @@ export const editorView: View = (context, root) => {
       replaceDraft({ ...current, name });
     });
 
+    const controls = controlsFor(item.type);
+    const byId = (id: string): Control | undefined => controls.find((control) => control.id === id);
+    const rows = (ids: string[]): HTMLElement[] =>
+      ids.map(byId).filter((control): control is Control => control !== undefined).map((control) => sliderRow(item, control));
+    const visual = item.type !== 'audio';
+
     const children: Array<Node | null> = [
       h(
         'h2',
@@ -372,29 +563,34 @@ export const editorView: View = (context, root) => {
         { class: 'muted' },
         formatBytes(item.type === 'carousel' ? (item.slides ?? []).reduce((sum, slide) => sum + slide.size, 0) : item.file.size),
       ),
-      h('label', { class: 'field-label' }, 'Nome', nameInput),
-      checkbox('Mostrar na câmera', item.visible, (visible) => replaceDraft({ ...selected()!, visible })),
+      visual ? h('h3', { class: 'panel-subtitle' }, 'Posição') : null,
+      visual ? moveBlock() : null,
+      visual ? quickRow(item) : null,
+      visual ? h('h3', { class: 'panel-subtitle' }, 'Tamanho e giro') : null,
+      ...rows(['scale', 'rot-z']),
     ];
 
-    const controls = controlsFor(item.type);
-    for (const group of ['position', 'rotation', 'size', 'media'] as const) {
-      const rows = controls.filter((control) => control.group === group).map((control) => sliderRow(item, control));
-      if (rows.length === 0) continue;
-      children.push(h('h3', { class: 'panel-subtitle' }, GROUP_TITLES[group]), ...rows);
-    }
+    const media = controls.filter((control) => control.group === 'media').map((control) => sliderRow(item, control));
+    if (media.length > 0) children.push(h('h3', { class: 'panel-subtitle' }, 'Mídia'), ...media);
 
-    const fine = controls.filter((control) => control.group === 'offset').map((control) => sliderRow(item, control));
-    if (fine.length > 0) {
+    const advanced = rows(['pos-x', 'pos-y', 'pos-z', 'rot-x', 'rot-y', 'off-x', 'off-y', 'off-z']);
+    if (advanced.length > 0) {
       children.push(
         h(
           'details',
           { class: 'fine-tune' },
-          h('summary', {}, 'Ajuste fino (deslocamento no eixo do próprio item)'),
-          h('p', { class: 'muted' }, 'Move o item ao longo dos eixos dele depois do giro. Útil, por exemplo, para afastar da pele um item inclinado.'),
-          ...fine,
+          h('summary', {}, 'Mais ajustes (posição precisa, inclinação, altura)'),
+          h('p', { class: 'muted' }, 'A inclinação e o deslocamento no eixo do próprio item (afastar da pele um item inclinado, por exemplo) ficam aqui.'),
+          ...advanced,
         ),
       );
     }
+
+    children.push(
+      h('h3', { class: 'panel-subtitle' }, 'Item'),
+      h('label', { class: 'field-label' }, 'Nome', nameInput),
+      checkbox('Mostrar na câmera', item.visible, (visible) => replaceDraft({ ...selected()!, visible })),
+    );
 
     // Opções por tipo.
     const options: HTMLElement[] = [];
@@ -487,11 +683,11 @@ export const editorView: View = (context, root) => {
         : h(
             'div',
             { class: 'row' },
-            h('button', { class: 'btn', type: 'button', disabled: busy || draft.length >= MAX_ITEMS_PER_PROJECT, onclick: () => void duplicateSelected() }, 'Duplicar'),
+            h('button', { class: 'btn btn-small', type: 'button', disabled: busy || draft.length >= MAX_ITEMS_PER_PROJECT, onclick: () => void duplicateSelected() }, 'Duplicar'),
             item.type === 'audio'
               ? null
-              : h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { const current = selected(); if (current) { replaceDraft(resetTransform(current)); drawPanel(); } } }, 'Restaurar posição'),
-            h('button', { class: 'btn btn-ghost', type: 'button', disabled: busy, onclick: () => { confirmingRemove = true; drawPanel(); } }, 'Remover'),
+              : h('button', { class: 'btn btn-small', type: 'button', onclick: () => { const current = selected(); if (current) { replaceDraft(resetTransform(current)); drawPanel(); } } }, 'Restaurar posição'),
+            h('button', { class: 'btn btn-small btn-ghost', type: 'button', disabled: busy, onclick: () => { confirmingRemove = true; drawPanel(); } }, 'Remover'),
           ),
     );
 
@@ -502,7 +698,9 @@ export const editorView: View = (context, root) => {
 
   function redrawList(): void {
     counter.textContent = `${draft.length}/${MAX_ITEMS_PER_PROJECT} itens`;
+    addLabel.setAttribute('aria-disabled', String(draft.length >= MAX_ITEMS_PER_PROJECT));
     list.replaceChildren(
+      h('li', {}, addLabel),
       ...draft.map((item) =>
         h(
           'li',
@@ -580,6 +778,7 @@ export const editorView: View = (context, root) => {
     redrawStatus();
     redrawChoice();
     for (const button of [frontButton, tiltedButton, playButton]) button.disabled = busy;
+    redrawHistory();
   }
 
   function selectItem(id: string | null): void {
@@ -698,52 +897,57 @@ export const editorView: View = (context, root) => {
     root.replaceChildren(
       h(
         'main',
-        { class: 'screen editor' },
-        topBar(project.name, () => context.navigate('projects')),
+        { class: 'editor-screen' },
         h(
-          'section',
-          { class: 'card' },
+          'header',
+          { class: 'editor-head' },
+          h('button', { class: 'btn btn-icon', type: 'button', 'aria-label': 'Voltar', onclick: () => context.navigate('projects') }, icon('back')),
+          h('h1', { class: 'topbar-title' }, project.name),
+          undoButton,
+          redoButton,
+        ),
+        h(
+          'div',
+          { class: 'editor-stagewrap' },
           stageBox,
           stageNote,
-          h('div', { class: 'row' }, frontButton, tiltedButton, playButton),
-          h(
-            'p',
-            { class: 'muted' },
-            'Toque num item para selecioná-lo, arraste com um dedo para posicionar e use dois dedos sobre a prévia para girar (torcendo) e mudar o tamanho (afastando ou aproximando) o item selecionado. A foto é o alvo reconhecido na câmera; o centro dela é o centro do alvo.',
-          ),
-          statusLine,
-          problems,
+          h('div', { class: 'stage-tools' }, h('div', { class: 'seg', role: 'group', 'aria-label': 'Ponto de vista da prévia' }, frontButton, tiltedButton), playButton),
         ),
         h(
-          'section',
-          { class: 'card' },
-          h('h2', { class: 'card-title' }, 'Itens'),
-          counter,
-          list,
+          'div',
+          { class: 'editor-sheet' },
           h(
-            'div',
-            { class: 'row' },
+            'section',
+            { class: 'stack' },
+            h('div', { class: 'items-head' }, h('h2', { class: 'card-title' }, 'Itens'), counter),
+            list,
+            choiceBox,
+            message,
+            statusLine,
+            problems,
+          ),
+          panel,
+          h(
+            'details',
+            { class: 'fine-tune help-box' },
+            h('summary', {}, 'Como usar e formatos aceitos'),
             h(
-              'label',
-              { class: 'btn btn-primary', 'aria-disabled': String(draft.length >= MAX_ITEMS_PER_PROJECT) },
-              'Adicionar arquivos',
-              fileInput,
+              'p',
+              { class: 'muted' },
+              'Toque num item para selecioná-lo, arraste com um dedo para posicionar e use dois dedos sobre a prévia para girar (torcendo) e mudar o tamanho (afastando ou aproximando) o item selecionado. A foto é o alvo reconhecido na câmera; o centro dela é o centro do alvo.',
+            ),
+            h(
+              'p',
+              { class: 'muted' },
+              `Aceita imagem (PNG, JPG, WebP), GIF, vídeo (MP4, WebM), modelo 3D (GLB, sem compressão Draco) e áudio (MP3, OGG, WAV, M4A). Até ${Math.floor(MAX_ITEM_FILE_BYTES / (1024 * 1024))} MB por arquivo e ${MAX_ITEMS_PER_PROJECT} itens por projeto. Os arquivos ficam só neste aparelho.`,
+            ),
+            h(
+              'p',
+              { class: 'muted', id: 'youtube-note' },
+              'YouTube e outros links ainda não são suportados: o player deles é uma página (iframe) que não entra na cena 3D e exige internet. Para usar um vídeo, adicione o arquivo MP4 ou WebM de um vídeo que você tenha direito de usar.',
             ),
           ),
-          h(
-            'p',
-            { class: 'muted' },
-            `Aceita imagem (PNG, JPG, WebP), GIF, vídeo (MP4, WebM), modelo 3D (GLB, sem compressão Draco) e áudio (MP3, OGG, WAV, M4A). Até ${Math.floor(MAX_ITEM_FILE_BYTES / (1024 * 1024))} MB por arquivo e ${MAX_ITEMS_PER_PROJECT} itens por projeto. Os arquivos ficam só neste aparelho.`,
-          ),
-          h(
-            'p',
-            { class: 'muted', id: 'youtube-note' },
-            'YouTube e outros links ainda não são suportados: o player deles é uma página (iframe) que não entra na cena 3D e exige internet. Para usar um vídeo, adicione o arquivo MP4 ou WebM de um vídeo que você tenha direito de usar.',
-          ),
-          choiceBox,
-          message,
         ),
-        panel,
         saveBar,
       ),
     );

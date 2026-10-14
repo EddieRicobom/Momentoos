@@ -24,6 +24,8 @@ export interface GestureHost {
   /** Tamanho atual (escala) do item, ou null se ele não puder ser redimensionado. */
   scaleOf(id: string): number | null;
   rescale(id: string, scale: number): void;
+  /** Um gesto de arrasto ou de dois dedos terminou (para esconder guias, por exemplo). */
+  end?(): void;
 }
 
 const TAP_SLOP_PX = 8;
@@ -90,8 +92,10 @@ export class GestureTracker {
       this.emptyTap = null;
     }
     this.pointers.delete(pointerId);
+    const hadGesture = this.drag?.pointerId === pointerId || (this.twist !== null && this.pointers.size < 2);
     if (this.drag?.pointerId === pointerId) this.drag = null;
     if (this.pointers.size < 2) this.twist = null;
+    if (hadGesture) this.host.end?.();
   }
 
   private pair(): [Point, Point] | null {
