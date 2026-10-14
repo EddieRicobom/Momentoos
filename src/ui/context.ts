@@ -1,3 +1,4 @@
+import type { TargetDiagnostics } from '../tracking/targetInfo';
 import type { ProjectRepository } from '../storage/repository';
 import type { TrackingStore } from '../tracking/store';
 
@@ -25,6 +26,8 @@ export interface AppTarget {
   referenceImage: PendingReferenceImage | null;
   /** Resumo do preparo (recorte e contraste) para mostrar na tela, quando houver. */
   note?: string | null;
+  /** Qualidade do alvo (pontos de rastreio, variantes); ausente se não foi medida. */
+  diagnostics?: TargetDiagnostics | null;
 }
 
 export type ViewName = 'home' | 'create' | 'camera' | 'settings' | 'projects' | 'import' | 'export' | 'editor';

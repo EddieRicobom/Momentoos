@@ -88,6 +88,13 @@ Etapa D (cena 3D ancorada):
   escolha fica salva (no iOS é preciso tocar de novo para dar a permissão). Se o sensor
   discordar da câmera, o app o desliga sozinho e avisa. **Nunca foi testado em aparelho
   real**: se ajuda de verdade, só se sabe testando (roteiro Parte 10).
+- **Detecção flexível**: o alvo também é compilado em versões esticadas/inclinadas, a
+  pose aceita pele esticada ou achatada, o rastreio sobe de resolução quando o desenho tem
+  poucos pontos e o quadro da câmera é normalizado em contraste local (sombras, contra-luz).
+  O app mostra quantos pontos de rastreio o alvo tem e avisa se são poucos. Em imagens
+  **sintéticas** o reconhecimento confirmado foi de 64 para 157 de 172 casos (sem a normalização de contraste, medida à parte); **não foi
+  testado em tatuagem real** (ver `docs/DETECCAO.md` e a Parte 11 do roteiro). Alvos
+  antigos continuam funcionando; recompile para ganhar as variantes.
 - Na câmera, os itens aparecem ancorados quando a tatuagem é reconhecida;
   vídeo, áudio, GIF e animações **tocam ao reconhecer e pausam ao perder**.
   Se o navegador bloquear o autoplay, aparece "Tocar áudio e vídeo".
@@ -334,6 +341,14 @@ src/
     targetPixels.ts       cinza, contraste, CLAHE e sugestão de recorte (puro)
     cropGeometry.ts       geometria do recorte (puro)
     targetCompiler.ts     compilação e validação do .mind
+    targetVariants.ts     variantes esticadas/inclinadas do alvo (puro)
+    variantKeyframes.ts   keyframes de reconhecimento das variantes (usa o detector do MindAR)
+    variantMatcher.ts     casamento com variantes (puro, roda no worker)
+    flexPose.ts           pose flexível: homografia com esticar/achatar (puro)
+    trackingScales.ts     resolução adaptativa do rastreio e suavização (puro)
+    frameNormalize.ts     normalização local de contraste do quadro
+    targetInfo.ts         texto de diagnóstico do alvo
+    patch/                arquivos do MindAR trocados pelo plugin do vite.config.ts
     arSession.ts          sessão MindARThree (câmera + rastreio)
     gyro.ts               giroscópio (devicemotion) como fonte de rotação da câmera
     poseStabilizer.ts     previsão por giroscópio + mistura + "segurar" a pose (puro, testado)
@@ -342,6 +357,7 @@ src/
   ui/                     telas e componentes (editorView.ts, previewStage.ts: editor e prévia 3D)
   types/mind-ar.d.ts      tipos escritos à mão para o MindAR
 tests/                    testes automatizados
+tools/detect-lab/         laboratório de detecção (Chromium headless; ver docs/DETECCAO.md)
 docs/                     rastreamento, formato de backup e roteiro de testes manuais
 stubs/canvas/             pacote vazio que substitui o node-canvas
 ```

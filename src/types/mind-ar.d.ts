@@ -19,6 +19,12 @@ declare module 'mind-ar/src/image-target/compiler.js' {
   }
 
   export class Compiler {
+    /** Resultado da última compilação (null antes de compilar). Usado para acrescentar keyframes. */
+    data: Array<{
+      targetImage: { data: Uint8Array; width: number; height: number };
+      matchingData: unknown[];
+      trackingData?: unknown;
+    }> | null;
     /**
      * `images` são elementos <img> decodificados (usa img.width/img.height).
      * `progressCallback` recebe um número de 0 a 100.
@@ -78,5 +84,80 @@ declare module 'mind-ar/src/image-target/three.js' {
     start(): Promise<void>;
     stop(): void;
     addAnchor(targetIndex: number): MindARAnchor;
+  }
+}
+
+declare module 'mind-ar/src/image-target/matching/matching.js' {
+  export function match(options: {
+    keyframe: unknown;
+    querypoints: unknown[];
+    querywidth: number;
+    queryheight: number;
+    debugMode: boolean;
+  }): { H?: unknown; matches?: unknown[]; debugExtra?: unknown };
+}
+
+declare module 'mind-ar/src/image-target/detector/detector.js' {
+  export class Detector {
+    constructor(width: number, height: number, debugMode?: boolean);
+    detect(input: unknown): { featurePoints: Array<{ x: number; y: number; maxima: boolean }>; debugExtra: unknown };
+  }
+}
+
+declare module 'mind-ar/src/image-target/image-list.js' {
+  export function buildImageList(image: {
+    data: Uint8Array;
+    width: number;
+    height: number;
+  }): Array<{ data: Uint8Array; width: number; height: number; scale: number }>;
+}
+
+declare module 'mind-ar/src/image-target/matching/hierarchical-clustering.js' {
+  export function build(options: { points: unknown[] }): { rootNode: unknown };
+}
+
+declare module 'mind-ar/src/image-target/utils/homography.js' {
+  /** Mínimos quadrados normalizados; devolve os 9 valores da homografia (linha a linha) ou null. */
+  export function solveHomography(srcPoints: number[][], dstPoints: number[][]): number[] | null;
+}
+
+declare module 'mind-ar/src/image-target/estimation/estimator.js' {
+  export class Estimator {
+    constructor(projectionTransform: number[][]);
+    estimate(options: {
+      screenCoords: Array<{ x: number; y: number }>;
+      worldCoords: Array<{ x: number; y: number; z?: number }>;
+    }): number[][];
+    refineEstimate(options: {
+      initialModelViewTransform: number[][];
+      worldCoords: Array<{ x: number; y: number; z?: number }>;
+      screenCoords: Array<{ x: number; y: number }>;
+    }): number[][] | null;
+  }
+}
+
+declare module 'mind-ar/src/image-target/tracker/extract.js' {
+  /** Pontos de rastreamento de uma imagem em cinza (pixels no tamanho da própria imagem). */
+  export function extract(image: {
+    data: Uint8Array;
+    width: number;
+    height: number;
+    scale: number;
+  }): Array<{ x: number; y: number }>;
+}
+
+declare module 'mind-ar/src/image-target/utils/images.js' {
+  export function resize(options: {
+    image: { data: Uint8Array; width: number; height: number };
+    ratio: number;
+  }): { data: Uint8Array; width: number; height: number };
+}
+
+declare module 'mind-ar/src/image-target/input-loader.js' {
+  import type { Tensor2D } from '@tensorflow/tfjs';
+  export class InputLoader {
+    constructor(width: number, height: number);
+    /** Devolve o quadro em tons de cinza (0-255), tensor [altura, largura]. */
+    loadInput(input: unknown): Tensor2D;
   }
 }

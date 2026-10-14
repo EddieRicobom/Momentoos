@@ -222,6 +222,23 @@ e mesmos movimentos. Anote o aparelho, o navegador e o sistema.
 Com base nisto dá para ajustar os números (peso 0,6; prazo 800 ms; limites 8° e 0,25)
 ou concluir que o giroscópio não compensa naquele aparelho.
 
+## Parte 11: Detecção flexível (ângulos, pele esticada, luz)
+
+Compare **alvo novo (com variantes)** × **alvo antigo** (compilado antes deste recurso, ou
+com a caixa de ângulos desmarcada) na MESMA tatuagem. Os números do laboratório são
+sintéticos; aqui é que se descobre se vale na pele real. Anote aparelho, navegador e luz.
+
+| # | O que fazer | Resultado esperado |
+|---|---|---|
+| 11.1 | Crie um alvo e olhe "Rastreio: N pontos de apoio". | N ≥ 8 sem aviso. Com aviso (poucos pontos), teste mesmo assim e anote se o conteúdo fixa. |
+| 11.2 | Abra um projeto antigo. | Aparece a dica de recompilar; recompilar leva alguns segundos a mais e o arquivo cresce (~2×). |
+| 11.3 | Incline o celular em relação à tatuagem: 30°, 45°, 60°, 70°. | O novo reconhece em ângulos maiores que o antigo. Anote o ângulo em que cada um falha. |
+| 11.4 | Estique a pele (abrir a mão, flexionar braço/joelho, esticar o tecido onde a tatuagem está) e achate (dobrar/encolher). | O conteúdo acompanha a tatuagem esticada sem sumir; pode ficar deformado junto. Anote o quanto de esticada aguenta. |
+| 11.5 | Sombra da sua mão/celular sobre metade da tatuagem; luz de lado; contra-luz; lanterna. | Reconhece e mantém. Anote o que derruba. |
+| 11.6 | Pouca luz (ambiente escuro) e câmera com ruído. | Pode ficar pior que com luz boa; anote se piora em relação ao alvo antigo. |
+| 11.7 | Deixe a câmera procurando (sem tatuagem à vista) por 2 min e olhe fluidez e calor. | Sem travar nem aquecer demais; compare com o alvo antigo. |
+| 11.8 | Reconhecimento com a tatuagem parada: tempo até o conteúdo aparecer. | Algumas dezenas de quadros no máximo; anote se o novo demora mais que o antigo. |
+
 ## Critérios propostos para considerar o rastreamento validado
 
 **Proposta para sua aprovação, não uma regra estabelecida.** O rastreamento só
