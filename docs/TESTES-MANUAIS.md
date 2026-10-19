@@ -166,10 +166,10 @@ Use só arquivos que você tenha direito de usar.
 
 | # | O que fazer | Resultado esperado |
 |---|---|---|
-| 9.1 | "Meus projetos" → **Adicionar itens**. Adicione os arquivos acima (vários de uma vez). | Cada arquivo vira um item na lista, com o tipo certo; o último fica selecionado. Anote qualquer arquivo recusado ou que não apareceu na prévia. |
+| 9.1 | "Meus projetos" → **Adicionar itens**. Escolha um arquivo e confira a prévia antes de confirmar; repita e cancele uma vez. | A miniatura mostra a posição inicial no alvo; cancelar não grava; confirmar inclui o item na lista. |
 | 9.2 | Tente adicionar um `.mov`, um `.gltf`, um arquivo renomeado (um PNG chamado `.glb`) e um arquivo maior que 48 MB. | Cada um é recusado com mensagem clara; os demais itens do lote entram normalmente. |
-| 9.3 | Leia o texto sobre YouTube na tela. | Avisa que YouTube/links não são suportados e como usar um vídeo. |
-| 9.4 | Na prévia, toque num item e arraste. Troque entre "De frente" e "Inclinada". | O item acompanha o dedo; a vista inclinada mostra a profundidade; tocar no vazio desmarca. Anote se o arrasto é preciso e se atrapalha a rolagem da página. |
+| 9.3 | Cole um link HTTPS válido do YouTube em **Música da apresentação** e toque em Reproduzir. | O player incorporado abre; a música só inicia após o toque. Teste link inválido e falta de conexão; o editor deve continuar utilizável. |
+| 9.4 | Na prévia, toque num item e arraste. Troque entre "De frente" e "Inclinada". Use a grade e os botões Alinhar X/Y. | O item acompanha o dedo; a caixa fica dentro do alvo quando seu tamanho permite; a grade encaixa em passos de 5%; tocar no vazio desmarca. |
 | 9.4b | Com um item selecionado, ponha **dois dedos** na prévia (em qualquer lugar, até fora do item) e gire. Teste também com o primeiro dedo em área vazia. | O item gira no plano dele (giro em Z) acompanhando os dedos, no mesmo sentido; o controle "Giro" acompanha; o item continua selecionado; soltar um dedo encerra o giro sem mover o item. Anote se o sentido está natural, se a rolagem da página interfere e se o gesto fica ruim na vista inclinada. Afastar os dedos aumenta o item e aproximar diminui (limites 0,05× a 5×); o controle "Tamanho" acompanha. Gire e afaste ao mesmo tempo para conferir que os dois funcionam juntos. |
 | 9.5 | Mexa em cada controle (posição, altura, giro, inclinação, tamanho, opacidade, volume, ajuste fino). | O item muda ao vivo; "Alterações não salvas" aparece; "Desfazer alterações" volta ao salvo. |
 | 9.6 | Toque em "Reproduzir mídia". | GIF anima, vídeo toca, GLB anima, áudio toca. "Pausar mídia" para tudo. Anote o que não tocou. |
@@ -197,6 +197,14 @@ Tenha 5 ou mais fotos (de preferência de câmera, grandes) e 1 PNG com transpar
 | 9.21 | Abra a câmera e aponte para a tatuagem; cubra-a e recupere. | O carrossel aparece ancorado e troca de imagem **só enquanto a tatuagem é vista**, continuando de onde parou ao recuperar. |
 | 9.22 | Monte um carrossel com 15 a 30 fotos grandes e deixe rodar 2 a 3 voltas na câmera. | Anote: engasgos ao trocar, aumento de memória/aquecimento, fechamento do navegador, imagens puladas com aviso. (As imagens são reduzidas a 1536 px e só a atual e a próxima ficam na memória.) |
 | 9.23 | Com o PNG transparente no carrossel e a transição ligada, observe a troca. | Esperado e documentado: durante ~0,6 s a imagem anterior aparece por trás das áreas transparentes da seguinte. Anote se incomoda. Exporte backup, apague o projeto e importe: o carrossel volta com todas as imagens, tempo e transição. |
+
+### 9.24 a 9.26: layouts e apresentação
+
+| # | O que fazer | Resultado esperado |
+|---|---|---|
+| 9.24 | Experimente os quatro layouts e cancele uma prévia; aplique outro, use Desfazer e Refazer. | O cancelamento restaura a disposição anterior; confirmar preserva os arquivos e permite desfazer/refazer. |
+| 9.25 | Inicie a apresentação; pause, avance, volte, altere o intervalo e comece a arrastar. | A câmera percorre os itens suavemente, o intervalo muda, e a apresentação pausa ao editar. |
+| 9.26 | Repita seleção, arrasto, layouts e player com largura de celular; habilite movimento reduzido no sistema. | Barra de controles cabe na largura; dois dedos ajustam tamanho/giro; movimentos de foco ficam instantâneos com movimento reduzido. |
 
 Não testado nem previsto: iOS/Safari. Se for o seu caso, anote tudo o que falhar.
 

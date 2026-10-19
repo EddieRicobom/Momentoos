@@ -18,6 +18,7 @@ interface FakeStage {
   options: Record<string, any>;
   attach: ReturnType<typeof vi.fn>;
   setView: ReturnType<typeof vi.fn>;
+  focusItem: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
 }
 const stages: FakeStage[] = [];
@@ -26,7 +27,7 @@ let webgl = true;
 vi.mock('../src/ui/previewStage', () => ({
   createPreviewStage: (options: Record<string, any>) => {
     if (!webgl) return null;
-    const stage: FakeStage = { options, attach: vi.fn(), setView: vi.fn(), dispose: vi.fn() };
+    const stage: FakeStage = { options, attach: vi.fn(), setView: vi.fn(), focusItem: vi.fn(), dispose: vi.fn() };
     stages.push(stage);
     return stage;
   },
@@ -109,10 +110,16 @@ function setSlider(input: HTMLInputElement, value: number): void {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-async function chooseFiles(root: HTMLElement, files: File[]): Promise<void> {
+async function chooseFiles(root: HTMLElement, files: File[], confirm = true): Promise<void> {
   const input = root.querySelector('input[type=file]') as HTMLInputElement;
   Object.defineProperty(input, 'files', { value: files, configurable: true });
   input.dispatchEvent(new Event('change', { bubbles: true }));
+  if (confirm) {
+    await vi.waitFor(() => {
+      if (!root.querySelector('.add-confirm-box button')) throw new Error('prévia de adição ainda não abriu');
+    });
+    button(root, 'Confirmar adição').click();
+  }
 }
 
 const file = (name: string, mime: string, seed = 1): File => new File([signedBytes(mime, 64, seed)], name, { type: mime });
@@ -160,7 +167,7 @@ describe('abrir o editor', () => {
     expect(root.querySelector('.editor-stage')).toBeNull();
   });
 
-  it('projeto vazio: convida a adicionar, mostra os formatos e o aviso do YouTube', async () => {
+  it('projeto vazio: convida a adicionar e oferece o player do YouTube', async () => {
     const repo = await freshRepository();
     const { project } = await newProject(repo);
     const { root } = await mount(repo, project.id);
@@ -168,7 +175,7 @@ describe('abrir o editor', () => {
     expect(root.textContent).toMatch(/Adicione arquivos para começar/);
     expect(root.textContent).toMatch(/0\/100 itens/);
     expect(root.textContent).toMatch(/GLB/);
-    expect(root.querySelector('#youtube-note')?.textContent).toMatch(/YouTube.*não são suportados/);
+    expect(root.querySelector('#youtube-note')?.textContent).toMatch(/YouTube.*player incorporado/);
     expect(stages).toHaveLength(1);
     expect(stages[0]!.attach).toHaveBeenCalledTimes(1);
   });
@@ -196,7 +203,59 @@ describe('abrir o editor', () => {
   });
 });
 
+describe('layouts e apresentação', () => {
+  it('confirma um layout, desfaz e refaz a disposição, e centraliza a câmera', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo, true);
+    await addItem(repo, project.id, { file: { data: signedBytes('image/png', 64, 8), fileName: 'azul.png', mimeType: 'image/png' } });
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    const before = (await savedItems(repo, project.id))[0]!;
+    (root.querySelector('button[aria-label="Centralizar câmera no item selecionado"]') as HTMLButtonElement).click();
+    expect(stages.at(-1)?.focusItem).toHaveBeenCalledWith(before.id);
+    button(root, 'Galeria').click();
+    expect(root.textContent).toMatch(/Prévia: Galeria/);
+    button(root, 'Aplicar disposição').click();
+    expect(root.textContent).toMatch(/Alterações não salvas/);
+    (root.querySelector('button[aria-label="Desfazer"]') as HTMLButtonElement).click();
+    expect(root.textContent).not.toMatch(/Alterações não salvas/);
+    (root.querySelector('button[aria-label="Refazer"]') as HTMLButtonElement).click();
+    expect(root.textContent).toMatch(/Alterações não salvas/);
+  });
+
+  it('permite iniciar o player YouTube por toque e mostra o player incorporado', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    const input = root.querySelector('input[aria-label="Link de música do YouTube"]') as HTMLInputElement;
+    input.value = 'https://youtu.be/abcdefghijk';
+    button(root, 'Reproduzir YouTube').click();
+    const frame = root.querySelector('iframe.youtube-player') as HTMLIFrameElement;
+    expect(frame).not.toBeNull();
+    expect(frame.src).toContain('/embed/abcdefghijk?autoplay=1');
+    button(root, 'Pausar YouTube').click();
+    expect(root.querySelector('iframe.youtube-player')).toBeNull();
+  });
+});
+
 describe('adicionar arquivos', () => {
+  it('mostra a prévia inicial e permite cancelar sem gravar', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    await chooseFiles(root, [file('rosa.png', 'image/png')], false);
+    const preview = root.querySelector('.add-confirm-box') as HTMLElement;
+    expect(preview.hidden).toBe(false);
+    expect(preview.textContent).toMatch(/centro do alvo/);
+    expect(preview.querySelector('img')).not.toBeNull();
+    expect(await savedItems(repo, project.id)).toHaveLength(0);
+    button(root, 'Cancelar').click();
+    expect(preview.hidden).toBe(true);
+    expect(await savedItems(repo, project.id)).toHaveLength(0);
+  });
+
   it('grava no armazenamento, seleciona o novo item e o coloca na cena', async () => {
     const repo = await freshRepository();
     const { project } = await newProject(repo);

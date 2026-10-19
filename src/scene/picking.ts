@@ -17,6 +17,13 @@ export function rayHitsPlane(origin: Vec3, direction: Vec3, planeZ: number): [nu
   return [origin[0] + direction[0] * t, origin[1] + direction[1] * t];
 }
 
+/** Mantém a caixa do objeto dentro do retângulo do alvo; itens maiores ficam centralizados no eixo correspondente. */
+export function clampPositionToTarget(x: number, y: number, halfWidth: number, halfHeight: number, targetAspect: number): [number, number] {
+  const maxX = Math.max(0, 0.5 - Math.max(0, halfWidth));
+  const maxY = Math.max(0, (Number.isFinite(targetAspect) && targetAspect > 0 ? targetAspect : 0.75) / 2 - Math.max(0, halfHeight));
+  return [Math.min(maxX, Math.max(-maxX, x)), Math.min(maxY, Math.max(-maxY, y))];
+}
+
 export type PreviewView = 'front' | 'tilted';
 
 /** Inclinação da vista "inclinada", em graus a partir da vista de frente. */

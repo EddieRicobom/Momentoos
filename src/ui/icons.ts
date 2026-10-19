@@ -12,6 +12,8 @@ const PATHS = {
   settings:
     '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
   center: '<circle cx="12" cy="12" r="3"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',
+  align: '<path d="M4 5v14M20 5v14M8 8h8M8 12h8M8 16h8"/>',
+  alignY: '<path d="M5 4h14M5 20h14M8 8v8M12 8v8M16 8v8"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   left: '<path d="M19 12H5M11 6l-6 6 6 6"/>',

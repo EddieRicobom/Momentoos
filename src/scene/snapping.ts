@@ -30,11 +30,14 @@ function nearest(value: number, lines: readonly number[], distance: number): num
 }
 
 /** `aspect` = altura / largura do alvo. */
-export function snapPosition(x: number, y: number, aspect: number, distance = SNAP_DISTANCE): SnapResult {
+export function snapPosition(x: number, y: number, aspect: number, distance = SNAP_DISTANCE, grid = false): SnapResult {
   const half = (Number.isFinite(aspect) && aspect > 0 ? aspect : 0.75) / 2;
   const sx = nearest(x, [0, -0.5, 0.5], distance);
   const sy = nearest(y, [0, -half, half], distance);
-  return { x: sx ?? x, y: sy ?? y, snappedX: sx !== null, snappedY: sy !== null };
+  const step = 0.05;
+  const gridX = grid && sx === null ? Number((Math.round(x / step) * step).toFixed(2)) : x;
+  const gridY = grid && sy === null ? Number((Math.round(y / step) * step).toFixed(2)) : y;
+  return { x: sx ?? gridX, y: sy ?? gridY, snappedX: sx !== null || (grid && sx === null && gridX !== x), snappedY: sy !== null || (grid && sy === null && gridY !== y) };
 }
 
 /** Ângulos "bonitos" onde o giro gruda. */

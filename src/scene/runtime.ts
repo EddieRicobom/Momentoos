@@ -194,6 +194,14 @@ export class SceneRuntime {
     this.emit();
   }
 
+  /** Ativa ou pausa um único item de mídia durante a apresentação. */
+  async setItemActive(id: string, active: boolean): Promise<void> {
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    await this.activate(entry, active);
+    this.emit();
+  }
+
   /** Chamar de dentro de um toque do usuário para liberar áudio e vídeo bloqueados. */
   async resume(): Promise<void> {
     await Promise.all(

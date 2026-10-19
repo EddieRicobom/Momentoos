@@ -25,6 +25,11 @@ describe('snapPosition', () => {
   it('proporção inválida usa o padrão sem estourar', () => {
     expect(snapPosition(0, 0.37, Number.NaN).snappedY).toBe(true);
   });
+
+  it('encaixa em incrementos de 5% somente quando a grade está ligada', () => {
+    expect(snapPosition(0.18, 0.13, 0.75, undefined, true)).toEqual({ x: 0.2, y: 0.15, snappedX: true, snappedY: true });
+    expect(snapPosition(0.18, 0.13, 0.75)).toEqual({ x: 0.18, y: 0.13, snappedX: false, snappedY: false });
+  });
 });
 
 describe('snapAngle', () => {

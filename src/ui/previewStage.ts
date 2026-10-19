@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GestureTracker } from '../scene/gestures';
-import { cameraPose, rayHitsPlane, type Point, type PreviewView } from '../scene/picking';
+import { cameraPose, clampPositionToTarget, rayHitsPlane, type Point, type PreviewView } from '../scene/picking';
 import { snapAngle, snapPosition } from '../scene/snapping';
 import type { SceneRuntime } from '../scene/runtime';
 
@@ -22,6 +22,7 @@ export interface PreviewStageOptions {
   targetAspect: number;
   referenceImage: Blob | null;
   getSelectedId(): string | null;
+  getGridSnap(): boolean;
   onSelect(id: string | null): void;
   onDrag(id: string, x: number, y: number): void;
   /** Giro atual (Z, graus) do item, ou null se ele não puder girar. */
@@ -35,6 +36,7 @@ export interface PreviewStageOptions {
 export interface PreviewStage {
   attach(runtime: SceneRuntime): void;
   setView(view: PreviewView): void;
+  focusItem(id: string | null): void;
   dispose(): void;
 }
 
@@ -59,6 +61,9 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
   let view: PreviewView = 'front';
   let runtime: SceneRuntime | null = null;
   let disposed = false;
+  const cameraTarget = new THREE.Vector3();
+  interface CameraMotion { fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3; elapsed: number; duration: number }
+  let cameraMotion: CameraMotion | null = null;
 
   // Plano do alvo (foto de referência) e contorno.
   const backdropMaterial = new THREE.MeshBasicMaterial({ color: 0x2a3138, side: THREE.DoubleSide });
@@ -130,11 +135,36 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     const pose = cameraPose(view, targetAspect, camera.aspect, camera.fov);
-    camera.position.set(...pose.position);
+    const offset = new THREE.Vector3(...pose.position);
+    camera.position.copy(cameraTarget).add(offset);
     camera.up.set(0, 1, 0);
-    camera.lookAt(0, 0, 0);
+    camera.lookAt(cameraTarget);
     camera.updateProjectionMatrix();
   }
+
+  const focusItem = (id: string | null): void => {
+    const root = id ? runtime?.rootOf(id) : null;
+    const target = new THREE.Vector3();
+    if (root) {
+      root.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(root);
+      if (!bounds.isEmpty()) bounds.getCenter(target);
+      else target.copy(root.position);
+    }
+    const fromPosition = camera.position.clone();
+    const fromTarget = cameraTarget.clone();
+    const toTarget = target;
+    const offset = fromPosition.clone().sub(fromTarget);
+    const toPosition = toTarget.clone().add(offset);
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    cameraMotion = { fromPosition, toPosition, fromTarget, toTarget, elapsed: 0, duration: reduced ? 0 : 0.55 };
+    if (reduced) {
+      camera.position.copy(toPosition);
+      cameraTarget.copy(toTarget);
+      camera.lookAt(cameraTarget);
+      cameraMotion = null;
+    }
+  };
 
   const observer = new ResizeObserver(applyCamera);
   observer.observe(container);
@@ -171,6 +201,12 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       setRay(point);
       const start = planeHit(root.position.z);
       if (!start) return null;
+      root.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(root);
+      const size = bounds.getSize(new THREE.Vector3());
+      const center = bounds.getCenter(new THREE.Vector3());
+      const boundsOffsetX = center.x - root.position.x;
+      const boundsOffsetY = center.y - root.position.y;
       const grabX = start[0] - root.position.x;
       const grabY = start[1] - root.position.y;
       const planeZ = root.position.z;
@@ -178,9 +214,10 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
         setRay(next);
         const hit = planeHit(planeZ);
         if (!hit) return;
-        const snap = snapPosition(hit[0] - grabX, hit[1] - grabY, targetAspect);
+        const snap = snapPosition(hit[0] - grabX, hit[1] - grabY, targetAspect, undefined, options.getGridSnap());
+        const [safeX, safeY] = clampPositionToTarget(snap.x + boundsOffsetX, snap.y + boundsOffsetY, size.x / 2, size.y / 2, targetAspect);
         showGuides(snap.snappedX && snap.x === 0, snap.snappedY && snap.y === 0, (snap.snappedX && snap.x !== 0) || (snap.snappedY && snap.y !== 0));
-        options.onDrag(id, snap.x, snap.y);
+        options.onDrag(id, safeX - boundsOffsetX, safeY - boundsOffsetY);
       };
     },
     selectedId: options.getSelectedId,
@@ -219,6 +256,15 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
   renderer.setAnimationLoop(() => {
     const delta = clock.getDelta();
     runtime?.update(delta);
+    if (cameraMotion) {
+      cameraMotion.elapsed += delta;
+      const t = Math.min(1, cameraMotion.elapsed / cameraMotion.duration);
+      const eased = t * t * (3 - 2 * t);
+      camera.position.lerpVectors(cameraMotion.fromPosition, cameraMotion.toPosition, eased);
+      cameraTarget.lerpVectors(cameraMotion.fromTarget, cameraMotion.toTarget, eased);
+      camera.lookAt(cameraTarget);
+      if (t >= 1) cameraMotion = null;
+    }
 
     const selected = options.getSelectedId();
     const root = selected && runtime ? runtime.rootOf(selected) : null;
@@ -242,6 +288,7 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       view = next;
       applyCamera();
     },
+    focusItem,
     dispose() {
       disposed = true;
       renderer.setAnimationLoop(null);

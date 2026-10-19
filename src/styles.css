@@ -1114,6 +1114,16 @@ input[type='range']:disabled {
   font-size: 0.86rem;
 }
 
+.stage-tools .focus-camera {
+  min-width: 42px;
+  padding-inline: 10px;
+}
+
+.stage-tools .focus-camera .icon {
+  width: 18px;
+  height: 18px;
+}
+
 .stage-tools .btn-play[aria-pressed='true'] {
   background: var(--accent);
   border-color: var(--accent);
@@ -1431,6 +1441,129 @@ input[type='range']:disabled {
   background: var(--accent-soft);
 }
 
+.add-confirm-box {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.pending-placement {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.pending-target {
+  width: min(100%, 210px);
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  overflow: hidden;
+  border: 1px dashed var(--accent);
+  border-radius: 10px;
+  background: #161d21;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.pending-target img {
+  max-width: 30%;
+  max-height: 55%;
+  object-fit: contain;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+}
+
+.pending-file-list {
+  max-height: 100px;
+  overflow: auto;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.layout-box,
+.presentation-box,
+.music-box {
+  display: grid;
+  gap: 10px;
+}
+
+.layout-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.layout-option {
+  min-height: 86px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.layout-thumb {
+  width: 64px;
+  height: 46px;
+  flex: none;
+  position: relative;
+  display: block;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #11171b;
+  overflow: hidden;
+}
+
+.layout-thumb i {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.layout-thumb-gallery i:nth-child(1) { left: 13px; top: 10px; }
+.layout-thumb-gallery i:nth-child(2) { left: 34px; top: 10px; }
+.layout-thumb-gallery i:nth-child(3) { left: 13px; top: 27px; }
+.layout-thumb-gallery i:nth-child(4) { left: 34px; top: 27px; }
+.layout-thumb-gallery i:nth-child(5) { left: 47px; top: 19px; }
+.layout-thumb-semicircle i:nth-child(1) { left: 8px; top: 27px; }
+.layout-thumb-semicircle i:nth-child(2) { left: 18px; top: 15px; }
+.layout-thumb-semicircle i:nth-child(3) { left: 28px; top: 9px; }
+.layout-thumb-semicircle i:nth-child(4) { left: 39px; top: 15px; }
+.layout-thumb-semicircle i:nth-child(5) { left: 49px; top: 27px; }
+.layout-thumb-free i:nth-child(1) { left: 8px; top: 9px; }
+.layout-thumb-free i:nth-child(2) { left: 31px; top: 11px; }
+.layout-thumb-free i:nth-child(3) { left: 17px; top: 28px; }
+.layout-thumb-free i:nth-child(4) { left: 43px; top: 25px; }
+.layout-thumb-free i:nth-child(5) { left: 53px; top: 10px; }
+.layout-thumb-carousel i:nth-child(1) { left: 28px; top: 4px; }
+.layout-thumb-carousel i:nth-child(2) { left: 45px; top: 13px; }
+.layout-thumb-carousel i:nth-child(3) { left: 42px; top: 29px; }
+.layout-thumb-carousel i:nth-child(4) { left: 16px; top: 29px; }
+.layout-thumb-carousel i:nth-child(5) { left: 12px; top: 13px; }
+
+.youtube-player {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: var(--radius);
+  background: #000;
+}
+
+.presentation-box[data-playing='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+
 .slide-list {
   list-style: none;
   margin: 0;
@@ -1453,5 +1586,36 @@ input[type='range']:disabled {
 @media (min-width: 720px) {
   .editor-stagewrap {
     height: clamp(300px, 52dvh, 520px);
+  }
+}
+
+@media (max-width: 420px) {
+  .stage-tools {
+    gap: 5px;
+    padding: 6px;
+  }
+
+  .stage-tools .seg {
+    padding: 2px;
+  }
+
+  .stage-tools .seg .btn {
+    min-height: 34px;
+    padding: 0 9px;
+    font-size: 0.78rem;
+  }
+
+  .stage-tools .focus-label {
+    display: none;
+  }
+
+  .stage-tools .focus-camera {
+    padding-inline: 8px;
+  }
+
+  .stage-tools .btn-play {
+    min-height: 38px;
+    padding-inline: 10px;
+    font-size: 0.75rem;
   }
 }

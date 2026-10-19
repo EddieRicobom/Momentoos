@@ -71,6 +71,18 @@ Etapa D (cena 3D ancorada):
   referência** (de frente ou inclinada; tocar seleciona, arrastar com um dedo posiciona e
   com **dois dedos** o item selecionado gira (torcendo) e muda de tamanho
   (afastando ou aproximando os dedos).
+- **Prévia antes de adicionar**: os arquivos não são gravados até confirmar; a
+  tela mostra uma miniatura e a posição inicial no alvo. É possível cancelar.
+- **Layouts prontos**: Galeria, Semicírculo, Composição livre e Carrossel reorganizam
+  os itens visuais e preservam arquivos e nomes. A prévia pode ser confirmada,
+  cancelada ou desfeita. Layout Carrossel organiza os objetos; não inicia a
+  apresentação automática.
+- **Apresentação automática**: iniciar, pausar, avançar, voltar e escolher intervalos
+  de 2 a 8 segundos. A câmera centraliza cada objeto com transição suave; editar
+  pausa a apresentação, e movimento reduzido desativa as transições.
+- **Alinhamento**: a grade opcional usa passos de 5%; os botões Alinhar X/Y alinham
+  com o item visual mais próximo. O arrasto mantém os limites do objeto dentro do
+  alvo, quando o tamanho do objeto permite.
 - **Carrossel automático**: ao escolher **duas ou mais imagens** (PNG, JPG, WebP) de
   uma vez, o editor pergunta se você quer um **carrossel** (um item só que troca de
   imagem sozinho, na ordem escolhida) ou itens separados. Cada carrossel tem o tempo
@@ -100,17 +112,17 @@ Etapa D (cena 3D ancorada):
   durante a busca. Só testado com ruído sintético, **não em aparelho real** (ver
   `docs/RASTREAMENTO.md`, "Estabilidade da pose").
 - **Editor mais fácil**: prévia fixa e grande no topo, ímãs e guias no centro e nas bordas do alvo,
-  setas de mover (passo fino), botões +/− e "Centralizar", desfazer/refazer. Interface refeita
+  setas de mover (passo fino), botões +/−, foco da câmera e desfazer/refazer. Interface refeita
   (tela inicial, projetos, editor, câmera com menos poluição).
 - Na câmera, os itens aparecem ancorados quando a tatuagem é reconhecida;
   vídeo, áudio, GIF e animações **tocam ao reconhecer e pausam ao perder**.
   Se o navegador bloquear o autoplay, aparece "Tocar áudio e vídeo".
 - Os arquivos dos itens ficam no IndexedDB e entram no backup ZIP (formato 3;
   backups do formato 1 continuam importando).
-- **YouTube e links não são suportados**: o player é uma página (iframe) que não
-  pode ser desenhada dentro da cena 3D e exige internet. A tela do editor avisa.
-  Para usar um vídeo, adicione o arquivo MP4/WebM de um vídeo que você tenha
-  direito de usar.
+- **Música da apresentação**: escolha um áudio local do projeto ou cole um link
+  HTTPS do YouTube (watch, youtu.be, Shorts, live ou embed). A faixa só começa ao
+  tocar em Reproduzir; YouTube exige internet e segue as restrições do próprio serviço.
+  O player aparece no editor, fora da foto ancorada.
 
 Tudo da Etapa D foi verificado por testes automatizados (montagem da cena com
 carregadores falsos, contas de posicionamento, armazenamento, backup, telas com

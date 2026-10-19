@@ -3,6 +3,7 @@ import { browserLoaders } from '../scene/loaders';
 import type { PreviewView } from '../scene/picking';
 import { SceneRuntime, type RuntimeSummary } from '../scene/runtime';
 import { describeProblems, describeSummary } from '../scene/summaryText';
+import { arrangeItems, SCENE_LAYOUTS, type SceneLayout } from '../scene/layouts';
 import {
   MAX_CAROUSEL_SLIDES,
   MAX_ITEMS_PER_PROJECT,
@@ -47,6 +48,8 @@ export const editorView: View = (context, root) => {
   let confirmingRemove = false;
   /** Várias imagens escolhidas de uma vez, esperando a decisão: carrossel ou itens separados. */
   let choice: File[] | null = null;
+  let pendingFiles: File[] | null = null;
+  let pendingPreviewUrls: string[] = [];
   let summary: RuntimeSummary | null = null;
   const refs = new Map<string, { input: HTMLInputElement; output: HTMLElement; control: Control }>();
   /** Histórico de desfazer/refazer (só ajustes; adicionar/remover itens zera o histórico). */
@@ -55,6 +58,19 @@ export const editorView: View = (context, root) => {
   let lastRememberedAt = 0;
   /** Setas e botões +/−: passo pequeno. */
   let fine = false;
+  let gridSnap = false;
+  let layoutOriginal: SceneItem[] | null = null;
+  let layoutMusicOriginal: boolean | null = null;
+  let presentationTimer: number | null = null;
+  let presentationIndex = 0;
+  let presentationInterval = 4_000;
+  let presentationInternalSelect = false;
+  let presentationMusicId: string | null = null;
+  let presentationMusicAttached = true;
+  let youtubeMusicUrl = '';
+  let youtubePlaying = false;
+  let localMusicPlaying = false;
+  const presentationItems = (): SceneItem[] => draft.filter((item) => item.visible && item.type !== 'audio');
 
   const stageBox = h('div', { class: 'editor-stage' });
   const stageNote = h('p', { class: 'muted stage-note', role: 'status' });
@@ -74,8 +90,14 @@ export const editorView: View = (context, root) => {
   const frontButton = h('button', { class: 'btn', type: 'button', onclick: () => setView('front') }, 'De frente');
   const tiltedButton = h('button', { class: 'btn', type: 'button', onclick: () => setView('tilted') }, 'Inclinada');
   const playButton = h('button', { class: 'btn btn-play', type: 'button', onclick: () => void togglePlay() }, 'Reproduzir mídia');
+  const focusButton = h('button', { class: 'btn focus-camera', type: 'button', 'aria-label': 'Centralizar câmera no item selecionado', title: 'Centralizar câmera', onclick: () => stage?.focusItem(selectedId) }, icon('center'), h('span', { class: 'focus-label' }, 'Focar'));
+  const layoutBox = h('section', { class: 'card layout-box', 'aria-label': 'Layouts prontos' });
+  const presentationBox = h('section', { class: 'card presentation-box', 'aria-label': 'Apresentação automática' });
+  const musicBox = h('section', { class: 'card music-box', 'aria-label': 'Música da apresentação' });
   const choiceBox = h('div', { class: 'choice-box', role: 'group', 'aria-label': 'Como adicionar as imagens' });
   choiceBox.hidden = true;
+  const addConfirmBox = h('div', { class: 'add-confirm-box', role: 'group', 'aria-label': 'Confirmar adição de arquivos' });
+  addConfirmBox.hidden = true;
   const slideInput = h('input', { type: 'file', multiple: true, accept: '.png,.jpg,.jpeg,.webp', class: 'visually-hidden', 'aria-label': 'Adicionar imagens ao carrossel' });
   slideInput.addEventListener('change', () => {
     const files = [...(slideInput.files ?? [])];
@@ -155,6 +177,7 @@ export const editorView: View = (context, root) => {
 
   /** Volta (-1) ou refaz (+1). Só mexe em itens que ainda existem. */
   function stepHistory(direction: -1 | 1): void {
+    stopPresentation();
     const from = direction === -1 ? undoStack : redoStack;
     const to = direction === -1 ? redoStack : undoStack;
     const snapshot = from.pop();
@@ -168,6 +191,7 @@ export const editorView: View = (context, root) => {
   }
 
   function replaceDraft(next: SceneItem): void {
+    stopPresentation();
     remember();
     draft = draft.map((item) => (item.id === next.id ? next : item));
     runtime?.updateItem(next);
@@ -196,8 +220,10 @@ export const editorView: View = (context, root) => {
   // ------------------------------------------------------------------ ações
 
   function setView(next: PreviewView): void {
+    stopPresentation();
     view = next;
     stage?.setView(next);
+    stage?.focusItem(null);
     frontButton.setAttribute('aria-pressed', String(next === 'front'));
     tiltedButton.setAttribute('aria-pressed', String(next === 'tilted'));
   }
@@ -209,13 +235,338 @@ export const editorView: View = (context, root) => {
     await runtime?.setTracking(playing);
   }
 
+  function stopPresentation(): void {
+    const wasActive = presentationTimer !== null;
+    if (presentationTimer !== null) window.clearInterval(presentationTimer);
+    presentationTimer = null;
+    if (wasActive && presentationMusicId) void runtime?.setItemActive(presentationMusicId, false);
+    if (wasActive && youtubePlaying) {
+      musicBox.querySelector('iframe')?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), 'https://www.youtube-nocookie.com');
+      youtubePlaying = false;
+    }
+    if (wasActive) localMusicPlaying = false;
+    presentationBox.dataset.playing = 'false';
+    redrawPresentation();
+  }
+
+  function presentationStep(direction: 1 | -1): void {
+    const items = presentationItems();
+    if (items.length === 0) return;
+    presentationIndex = (presentationIndex + direction + items.length) % items.length;
+    const item = items[presentationIndex]!;
+    presentationInternalSelect = true;
+    selectItem(item.id);
+    presentationInternalSelect = false;
+    stage?.focusItem(item.id);
+  }
+
+  function startPresentation(): void {
+    const items = presentationItems();
+    if (items.length < 2) {
+      say('Adicione pelo menos dois itens visuais para iniciar a apresentação.');
+      return;
+    }
+    if (presentationTimer !== null) {
+      stopPresentation();
+      return;
+    }
+    const selectedIndex = items.findIndex((item) => item.id === selectedId);
+    presentationIndex = selectedIndex < 0 ? items.length - 1 : selectedIndex - 1;
+    presentationBox.dataset.playing = 'true';
+    presentationStep(1);
+    presentationTimer = window.setInterval(() => presentationStep(1), presentationInterval);
+    if (presentationMusicAttached) {
+      if (presentationMusicId) {
+        if (youtubePlaying) musicBox.querySelector('iframe')?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), 'https://www.youtube-nocookie.com');
+        youtubePlaying = false;
+        void runtime?.setItemActive(presentationMusicId, true);
+        redrawMusicBox();
+      }
+      else if (youtubeVideoId(youtubeMusicUrl) && !youtubePlaying) {
+        youtubePlaying = true;
+        redrawMusicBox();
+      }
+    }
+    redrawPresentation();
+  }
+
+  function redrawPresentation(): void {
+    const items = presentationItems();
+    const active = presentationTimer !== null;
+    presentationBox.replaceChildren(
+      h('h2', { class: 'card-title' }, 'Apresentação automática'),
+      h('p', { class: 'muted' }, 'Percorre os itens visuais e centraliza cada um com uma transição suave. A edição pausa a apresentação.'),
+      h('label', { class: 'field-label' }, 'Intervalo', h('select', {
+        class: 'text-input',
+        'aria-label': 'Intervalo da apresentação',
+        onchange: (event: Event) => {
+          presentationInterval = Number((event.currentTarget as HTMLSelectElement).value);
+          if (presentationTimer !== null) {
+            window.clearInterval(presentationTimer);
+            presentationTimer = window.setInterval(() => presentationStep(1), presentationInterval);
+          }
+        },
+      }, ...[2, 3, 4, 6, 8].map((seconds) => h('option', { value: seconds * 1000, selected: presentationInterval === seconds * 1000 }, `${seconds} segundos`)))),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn', type: 'button', disabled: items.length < 2, onclick: () => presentationStep(-1) }, 'Voltar'),
+        h('button', { class: 'btn btn-primary', type: 'button', disabled: items.length < 2, 'aria-pressed': String(active), onclick: startPresentation }, active ? 'Pausar' : 'Iniciar'),
+        h('button', { class: 'btn', type: 'button', disabled: items.length < 2, onclick: () => presentationStep(1) }, 'Avançar'),
+      ),
+      h('p', { class: 'muted' }, `${items.length} ${items.length === 1 ? 'item' : 'itens'} na apresentação`),
+    );
+  }
+
+  function previewLayout(layout: SceneLayout): void {
+    stopPresentation();
+    if (!layoutOriginal) {
+      layoutOriginal = cloneItems(draft);
+      layoutMusicOriginal = presentationMusicAttached;
+    }
+    const aspect = record?.anchor ? record.anchor.height / record.anchor.width : record?.referenceImage ? record.referenceImage.height / record.referenceImage.width : 0.75;
+    draft = arrangeItems(layoutOriginal, layout, aspect);
+    for (const item of draft) runtime?.updateItem(item);
+    layoutBox.replaceChildren(
+      h('h2', { class: 'card-title' }, `Prévia: ${SCENE_LAYOUTS.find((entry) => entry.id === layout)?.label ?? 'Layout'}`),
+      h('p', { class: 'muted' }, 'Os arquivos e nomes ficam preservados. A disposição só é salva quando você confirma e toca em Salvar.'),
+      checkbox('Usar a música selecionada na apresentação', presentationMusicAttached, (value) => { presentationMusicAttached = value; previewLayout(layout); }),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: confirmLayout }, 'Aplicar disposição'),
+        h('button', { class: 'btn', type: 'button', onclick: cancelLayout }, 'Cancelar prévia'),
+      ),
+    );
+    redrawList();
+    drawPanel();
+    redrawSaveBar();
+  }
+
+  function confirmLayout(): void {
+    if (!layoutOriginal) return;
+    undoStack.push(cloneItems(layoutOriginal));
+    if (undoStack.length > 80) undoStack.shift();
+    redoStack = [];
+    layoutOriginal = null;
+    layoutMusicOriginal = null;
+    storeMusicChoice();
+    redrawHistory();
+    redrawLayoutBox();
+    redrawSaveBar();
+  }
+
+  function cancelLayout(): void {
+    if (layoutOriginal) {
+      draft = cloneItems(layoutOriginal);
+      for (const item of draft) runtime?.updateItem(item);
+    }
+    layoutOriginal = null;
+    if (layoutMusicOriginal !== null) presentationMusicAttached = layoutMusicOriginal;
+    layoutMusicOriginal = null;
+    redrawLayoutBox();
+    redrawList();
+    drawPanel();
+    redrawSaveBar();
+  }
+
+  function redrawLayoutBox(): void {
+    if (layoutOriginal) return;
+    layoutBox.replaceChildren(
+      h('h2', { class: 'card-title' }, 'Layouts prontos'),
+      h('p', { class: 'muted' }, 'Veja uma disposição na prévia antes de aplicar. Escolha a música abaixo e marque se ela deve tocar na apresentação.'),
+      h('div', { class: 'layout-options' }, ...SCENE_LAYOUTS.map((layout) =>
+        h('button', { class: 'btn layout-option', type: 'button', onclick: () => previewLayout(layout.id) },
+          h('span', { class: `layout-thumb layout-thumb-${layout.id}`, 'aria-hidden': 'true' }, ...Array.from({ length: 5 }, () => h('i'))),
+          h('strong', {}, layout.label),
+        ),
+      )),
+    );
+  }
+
+  function youtubeVideoId(value: string): string | null {
+    try {
+      const url = new URL(value.trim());
+      if (url.protocol !== 'https:') return null;
+      if (url.hostname === 'youtu.be') return url.pathname.split('/').filter(Boolean)[0] ?? null;
+      if (!['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'].includes(url.hostname)) return null;
+      if (url.pathname === '/watch') return url.searchParams.get('v');
+      const match = url.pathname.match(/^\/(?:embed|shorts|live)\/([\w-]+)/);
+      return match?.[1] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  function musicStorageKey(): string {
+    return `momentoos:music:${projectId ?? ''}`;
+  }
+
+  function storeMusicChoice(): void {
+    try {
+      localStorage.setItem(musicStorageKey(), JSON.stringify({ audioId: presentationMusicId, youtubeUrl: youtubeMusicUrl, musicAttached: presentationMusicAttached }));
+    } catch {
+      say('A preferência de música não pôde ser salva neste navegador.', 'error');
+    }
+  }
+
+  function loadMusicChoice(): void {
+    try {
+      const raw = localStorage.getItem(musicStorageKey());
+      if (!raw) return;
+      const savedChoice = JSON.parse(raw) as { audioId?: unknown; youtubeUrl?: unknown; musicAttached?: unknown };
+      if (typeof savedChoice.audioId === 'string' && draft.some((item) => item.id === savedChoice.audioId && item.type === 'audio')) presentationMusicId = savedChoice.audioId;
+      if (typeof savedChoice.musicAttached === 'boolean') presentationMusicAttached = savedChoice.musicAttached;
+      if (typeof savedChoice.youtubeUrl === 'string' && youtubeVideoId(savedChoice.youtubeUrl)) youtubeMusicUrl = savedChoice.youtubeUrl;
+    } catch {
+      /* preferência inválida ou armazenamento indisponível: a cena continua normal */
+    }
+  }
+
+  function toggleLocalMusic(): void {
+    if (!presentationMusicId) return;
+    const wasPlaying = localMusicPlaying;
+    if (presentationTimer !== null) {
+      stopPresentation();
+      if (wasPlaying) return;
+    }
+    localMusicPlaying = !localMusicPlaying;
+    if (localMusicPlaying) {
+      youtubePlaying = false;
+      void runtime?.setItemActive(presentationMusicId, true);
+    } else void runtime?.setItemActive(presentationMusicId, false);
+    redrawMusicBox();
+  }
+
+  function toggleYoutubeMusic(): void {
+    const wasPlaying = youtubePlaying;
+    if (presentationTimer !== null) {
+      stopPresentation();
+      if (wasPlaying) return;
+    }
+    const id = youtubeVideoId(youtubeMusicUrl);
+    if (!id) {
+      say('Cole um link válido do YouTube (watch, youtu.be, Shorts ou live).', 'error');
+      return;
+    }
+    if (youtubePlaying) {
+      const frame = musicBox.querySelector('iframe');
+      frame?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), 'https://www.youtube-nocookie.com');
+      youtubePlaying = false;
+    } else {
+      if (presentationMusicId) void runtime?.setItemActive(presentationMusicId, false);
+      localMusicPlaying = false;
+      youtubePlaying = true;
+    }
+    redrawMusicBox();
+  }
+
+  function redrawMusicBox(): void {
+    const audioItems = draft.filter((item) => item.type === 'audio');
+    const select = h('select', {
+      class: 'text-input',
+      'aria-label': 'Música local da apresentação',
+      onchange: (event: Event) => {
+        if (presentationMusicId) void runtime?.setItemActive(presentationMusicId, false);
+        presentationMusicId = (event.currentTarget as HTMLSelectElement).value || null;
+        localMusicPlaying = false;
+        storeMusicChoice();
+        redrawMusicBox();
+      },
+    },
+    h('option', { value: '' }, 'Sem música local'),
+    ...audioItems.map((item) => h('option', { value: item.id, selected: item.id === presentationMusicId }, item.name)));
+    const urlInput = h('input', {
+      class: 'text-input', type: 'url', inputmode: 'url', placeholder: 'https://youtu.be/…', value: youtubeMusicUrl,
+      'aria-label': 'Link de música do YouTube',
+      onchange: (event: Event) => { youtubeMusicUrl = (event.currentTarget as HTMLInputElement).value.trim(); },
+    });
+    const children: Node[] = [
+      h('h2', { class: 'card-title' }, 'Música da apresentação'),
+      h('p', { class: 'muted' }, 'O áudio só começa depois de você tocar em Reproduzir. Selecione um arquivo que já está no projeto ou forneça um link do YouTube.'),
+      h('label', { class: 'field-label' }, 'Arquivo de áudio', select),
+      h('button', { class: 'btn', type: 'button', disabled: !presentationMusicId, 'aria-pressed': String(localMusicPlaying), onclick: toggleLocalMusic }, localMusicPlaying ? 'Pausar faixa local' : 'Reproduzir faixa local'),
+      h('label', { class: 'field-label' }, 'YouTube', urlInput),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: () => { youtubeMusicUrl = urlInput.value.trim(); storeMusicChoice(); toggleYoutubeMusic(); } }, youtubePlaying ? 'Pausar YouTube' : 'Reproduzir YouTube'),
+        h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { youtubeMusicUrl = ''; youtubePlaying = false; localMusicPlaying = false; if (presentationMusicId) void runtime?.setItemActive(presentationMusicId, false); storeMusicChoice(); redrawMusicBox(); } }, 'Limpar'),
+      ),
+    ];
+    const musicItem = audioItems.find((item) => item.id === presentationMusicId);
+    if (musicItem) {
+      const volume = h('input', { type: 'range', min: 0, max: 1, step: 0.01, value: musicItem.options.volume, 'aria-label': 'Volume da música local' });
+      volume.addEventListener('input', () => {
+        stopPresentation();
+        const current = draft.find((item) => item.id === presentationMusicId);
+        const control = CONTROLS.find((candidate) => candidate.id === 'volume')!;
+        if (!current) return;
+        remember();
+        const changed = applyControl(current, control, Number(volume.value));
+        draft = draft.map((item) => item.id === changed.id ? changed : item);
+        runtime?.updateItem(changed);
+        redrawSaveBar();
+      });
+      children.push(h('label', { class: 'field-label' }, 'Volume', volume));
+    }
+    const videoId = youtubeVideoId(youtubeMusicUrl);
+    if (youtubePlaying && videoId) {
+      const frame = h('iframe', {
+        class: 'youtube-player', title: 'Player do YouTube', allow: 'autoplay; encrypted-media; picture-in-picture', allowfullscreen: true,
+        referrerpolicy: 'strict-origin-when-cross-origin', src: `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&controls=1&rel=0&enablejsapi=1`,
+      });
+      children.push(frame);
+    }
+    musicBox.replaceChildren(...children);
+  }
+
   const isStaticImage = (file: File): boolean => {
     const kind = classifyFile(file.name, file.type);
     return kind.ok && kind.type === 'image';
   };
 
   /** Arquivos escolhidos: imagens soltas em número ≥ 2 pedem a decisão carrossel × separados. */
-  async function addFiles(files: File[]): Promise<void> {
+  function addFiles(files: File[]): void {
+    stopPresentation();
+    pendingFiles = files;
+    pendingPreviewUrls = files.slice(0, 3).filter((file) => file.type.startsWith('image/')).map((file) => URL.createObjectURL(file));
+    redrawPendingFiles();
+  }
+
+  function redrawPendingFiles(): void {
+    addConfirmBox.hidden = pendingFiles === null;
+    if (!pendingFiles) {
+      addConfirmBox.replaceChildren();
+      return;
+    }
+    const files = pendingFiles;
+    const previews = pendingPreviewUrls.map((url, index) => h('img', { src: url, alt: `Prévia do arquivo ${index + 1}` }));
+    const countText = files.length === 1 ? '1 arquivo será colocado' : `${files.length} arquivos serão colocados`;
+    addConfirmBox.replaceChildren(
+      h('h3', {}, 'Prévia de adição'),
+      h('p', { class: 'muted' }, `${countText} no centro ou perto do centro do alvo. Você poderá ajustar a posição depois.`),
+      h('div', { class: 'pending-placement' },
+        h('span', { class: 'pending-target' },
+          ...previews,
+          previews.length === 0 ? h('span', {}, files[0]?.name ?? 'Objeto') : null,
+        ),
+        h('span', { class: 'muted' }, 'Posição inicial: centro do alvo'),
+      ),
+      h('ul', { class: 'pending-file-list' }, ...files.slice(0, 6).map((file) => h('li', {}, file.name)), files.length > 6 ? h('li', {}, `e mais ${files.length - 6} arquivo(s)`) : null),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: () => {
+          pendingFiles = null;
+          pendingPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+          pendingPreviewUrls = [];
+          redrawPendingFiles();
+          void commitFiles(files);
+        } }, 'Confirmar adição'),
+        h('button', { class: 'btn', type: 'button', onclick: () => {
+          pendingFiles = null;
+          pendingPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+          pendingPreviewUrls = [];
+          redrawPendingFiles();
+        } }, 'Cancelar'),
+      ),
+    );
+  }
+
+  async function commitFiles(files: File[]): Promise<void> {
     const images = files.filter(isStaticImage);
     if (images.length >= 2) {
       choice = images;
@@ -279,6 +630,7 @@ export const editorView: View = (context, root) => {
 
   /** Acrescenta imagens a um carrossel que já existe. */
   async function addToCarousel(files: File[]): Promise<void> {
+    stopPresentation();
     const item = selected();
     if (!item || item.type !== 'carousel') return;
     await run(async () => {
@@ -310,6 +662,7 @@ export const editorView: View = (context, root) => {
   }
 
   async function duplicateSelected(): Promise<void> {
+    stopPresentation();
     const item = selected();
     if (!item) return;
     await run(async () => {
@@ -324,6 +677,7 @@ export const editorView: View = (context, root) => {
   }
 
   async function removeSelected(): Promise<void> {
+    stopPresentation();
     const item = selected();
     if (!item) return;
     await run(async () => {
@@ -413,6 +767,7 @@ export const editorView: View = (context, root) => {
     });
     input.style.setProperty('--fill', percentOf(control, value));
     input.addEventListener('input', () => {
+      stopPresentation();
       const current = selected();
       if (!current) return;
       remember();
@@ -486,7 +841,8 @@ export const editorView: View = (context, root) => {
         arrow('right', 'Mover para a direita', 1, 0),
         arrow('down', 'Mover para baixo', 0, -1),
       ),
-      h('div', { class: 'move-side' }, fineToggle, h('p', { class: 'muted' }, 'Arraste o item na prévia ou use as setas (segure para repetir). Ele gruda no centro e nas bordas do alvo.')),
+      h('div', { class: 'move-side' }, fineToggle, h('p', { class: 'muted' }, 'Arraste na prévia ou use as setas. O encaixe alinha ao alvo; a grade é opcional.')),
+      checkbox('Encaixe em grade (5%)', gridSnap, (value) => { gridSnap = value; drawPanel(); }),
     );
   }
 
@@ -501,6 +857,16 @@ export const editorView: View = (context, root) => {
       quick('center', 'Centralizar', () => {
         const current = selected();
         if (current) replaceDraft(moveItem(current, 0, 0));
+      }),
+      quick('align', 'Alinhar X', () => {
+        const current = selected();
+        const neighbor = draft.filter((candidate) => candidate.type !== 'audio' && candidate.id !== current?.id).sort((a, b) => Math.abs(a.transform.position[0] - current!.transform.position[0]) - Math.abs(b.transform.position[0] - current!.transform.position[0]))[0];
+        if (current && neighbor) replaceDraft(moveItem(current, neighbor.transform.position[0], current.transform.position[1]));
+      }),
+      quick('alignY', 'Alinhar Y', () => {
+        const current = selected();
+        const neighbor = draft.filter((candidate) => candidate.type !== 'audio' && candidate.id !== current?.id).sort((a, b) => Math.abs(a.transform.position[1] - current!.transform.position[1]) - Math.abs(b.transform.position[1] - current!.transform.position[1]))[0];
+        if (current && neighbor) replaceDraft(moveItem(current, current.transform.position[0], neighbor.transform.position[1]));
       }),
       quick('rotateLeft', '−15°', () => {
         const current = selected();
@@ -777,12 +1143,18 @@ export const editorView: View = (context, root) => {
     redrawSaveBar();
     redrawStatus();
     redrawChoice();
-    for (const button of [frontButton, tiltedButton, playButton]) button.disabled = busy;
+    redrawPendingFiles();
+    redrawPresentation();
+    for (const button of [frontButton, tiltedButton, focusButton, playButton]) button.disabled = busy;
     redrawHistory();
   }
 
   function selectItem(id: string | null): void {
-    if (id === selectedId) return;
+    if (id === selectedId) {
+      if (!presentationInternalSelect) stopPresentation();
+      return;
+    }
+    if (!presentationInternalSelect) stopPresentation();
     selectedId = id;
     confirmingRemove = false;
     redrawList();
@@ -864,8 +1236,10 @@ export const editorView: View = (context, root) => {
       targetAspect: aspect,
       referenceImage,
       getSelectedId: () => selectedId,
+      getGridSnap: () => gridSnap,
       onSelect: (id) => selectItem(id),
       onDrag: (id, x, y) => {
+        stopPresentation();
         if (id !== selectedId) selectItem(id);
         const item = selected();
         if (item) replaceDraft(moveItem(item, x, y));
@@ -910,8 +1284,9 @@ export const editorView: View = (context, root) => {
           'div',
           { class: 'editor-stagewrap' },
           stageBox,
+          h('p', { class: 'stage-hint' }, 'Toque ou clique para selecionar · Arraste para mover · Dois dedos giram e redimensionam'),
           stageNote,
-          h('div', { class: 'stage-tools' }, h('div', { class: 'seg', role: 'group', 'aria-label': 'Ponto de vista da prévia' }, frontButton, tiltedButton), playButton),
+          h('div', { class: 'stage-tools' }, h('div', { class: 'seg', role: 'group', 'aria-label': 'Ponto de vista da prévia' }, frontButton, tiltedButton), focusButton, playButton),
         ),
         h(
           'div',
@@ -921,7 +1296,11 @@ export const editorView: View = (context, root) => {
             { class: 'stack' },
             h('div', { class: 'items-head' }, h('h2', { class: 'card-title' }, 'Itens'), counter),
             list,
+            addConfirmBox,
             choiceBox,
+            layoutBox,
+            presentationBox,
+            musicBox,
             message,
             statusLine,
             problems,
@@ -944,7 +1323,7 @@ export const editorView: View = (context, root) => {
             h(
               'p',
               { class: 'muted', id: 'youtube-note' },
-              'YouTube e outros links ainda não são suportados: o player deles é uma página (iframe) que não entra na cena 3D e exige internet. Para usar um vídeo, adicione o arquivo MP4 ou WebM de um vídeo que você tenha direito de usar.',
+              'Músicas e vídeos do YouTube tocam no player incorporado, não sobre a foto 3D. A reprodução exige conexão e segue as restrições do YouTube e do navegador.',
             ),
           ),
         ),
@@ -955,6 +1334,10 @@ export const editorView: View = (context, root) => {
     setView('front');
     playButton.setAttribute('aria-pressed', 'false');
     selectedId = draft[0]?.id ?? null;
+    loadMusicChoice();
+    redrawLayoutBox();
+    redrawMusicBox();
+    redrawPresentation();
     redrawAll();
   }
 
@@ -962,6 +1345,8 @@ export const editorView: View = (context, root) => {
 
   return () => {
     disposed = true;
+    stopPresentation();
+    pendingPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
     // Salva sozinho o que ficou pendente: o botão "voltar" do aparelho não pergunta nada.
     if (repo && projectId && dirty()) {
       const pending = diffItems(saved, draft);
