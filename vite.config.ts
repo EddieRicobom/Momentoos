@@ -52,6 +52,10 @@ export default defineConfig(({ mode }) => ({
     // `?worker&inline` e `?raw` do Vite. O pré-empacotamento de dependências
     // não entende essas sintaxes, então ele precisa ficar de fora.
     exclude: ['mind-ar'],
+    // O mind-ar carrega o TensorFlow.js a partir do código-fonte excluído.
+    // Pré-empacote suas dependências CommonJS que o navegador não executa
+    // diretamente como módulos ES (Long e seedrandom).
+    include: ['long', 'seedrandom'],
   },
   build: {
     target: 'es2022',
