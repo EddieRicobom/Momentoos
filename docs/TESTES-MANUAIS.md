@@ -100,8 +100,8 @@ tatuagem real).
 | # | Passo | Esperado | Resultado |
 |---|---|---|---|
 | 7.1 | Em "Criar âncora", compile uma foto, dê um nome e toque "Salvar projeto" | Aviso "Salvo neste aparelho"; o botão some | |
-| 7.2 | Feche a aba/app por completo e abra de novo; vá em "Meus projetos" | O projeto aparece com miniatura, nome, data e situação "Pronto" | |
-| 7.3 | Toque "Abrir câmera" no projeto | Abre sem recompilar (sem barra de progresso de compilação) e segue o fluxo da Parte 3 | |
+| 7.2 | Feche a aba/app por completo e abra de novo; vá em "Minhas lembranças" | A lembrança aparece com miniatura, nome, data e situação "Pronto" | |
+| 7.3 | Toque "Rever na câmera" na lembrança | Abre sem recompilar (sem barra de progresso de compilação) e segue o fluxo da Parte 3 | |
 | 7.4 | Reinicie o celular e repita 7.2 e 7.3 | Igual; anote se o projeto sumiu | |
 | 7.5 | Renomeie o projeto (inclusive com acentos) | Novo nome aparece e persiste após recarregar | |
 | 7.6 | Tente renomear com o nome em branco | Mensagem de erro; nome antigo mantido | |
@@ -166,13 +166,13 @@ Use só arquivos que você tenha direito de usar.
 
 | # | O que fazer | Resultado esperado |
 |---|---|---|
-| 9.1 | "Meus projetos" → **Adicionar itens**. Escolha um arquivo e confira a prévia antes de confirmar; repita e cancele uma vez. | A miniatura mostra a posição inicial no alvo; cancelar não grava; confirmar inclui o item na lista. |
+| 9.1 | "Minhas lembranças" → **Adicionar lembranças**. Escolha um arquivo e confira a prévia antes de confirmar; repita e cancele uma vez. | A miniatura mostra a posição inicial no alvo; cancelar não grava; confirmar inclui a lembrança na lista. |
 | 9.2 | Tente adicionar um `.mov`, um `.gltf`, um arquivo renomeado (um PNG chamado `.glb`) e um arquivo maior que 48 MB. | Cada um é recusado com mensagem clara; os demais itens do lote entram normalmente. |
-| 9.3 | Cole um link HTTPS válido do YouTube em **Música da apresentação** e toque em Reproduzir. | O player incorporado abre; a música só inicia após o toque. Teste link inválido e falta de conexão; o editor deve continuar utilizável. |
+| 9.3 | Cole um link HTTPS válido do YouTube em **Trilha para rever suas lembranças** e toque em Reproduzir YouTube. | O player incorporado abre; a música só inicia após o toque. Teste link inválido e falta de conexão; a organização deve continuar utilizável. |
 | 9.4 | Na prévia, toque num item e arraste. Troque entre "De frente" e "Inclinada". Use a grade e os botões Alinhar X/Y. | O item acompanha o dedo; a caixa fica dentro do alvo quando seu tamanho permite; a grade encaixa em passos de 5%; tocar no vazio desmarca. |
 | 9.4b | Com um item selecionado, ponha **dois dedos** na prévia (em qualquer lugar, até fora do item) e gire. Teste também com o primeiro dedo em área vazia. | O item gira no plano dele (giro em Z) acompanhando os dedos, no mesmo sentido; o controle "Giro" acompanha; o item continua selecionado; soltar um dedo encerra o giro sem mover o item. Anote se o sentido está natural, se a rolagem da página interfere e se o gesto fica ruim na vista inclinada. Afastar os dedos aumenta o item e aproximar diminui (limites 0,05× a 5×); o controle "Tamanho" acompanha. Gire e afaste ao mesmo tempo para conferir que os dois funcionam juntos. |
 | 9.5 | Mexa em cada controle (posição, altura, giro, inclinação, tamanho, opacidade, volume, ajuste fino). | O item muda ao vivo; "Alterações não salvas" aparece; "Desfazer alterações" volta ao salvo. |
-| 9.6 | Toque em "Reproduzir mídia". | GIF anima, vídeo toca, GLB anima, áudio toca. "Pausar mídia" para tudo. Anote o que não tocou. |
+| 9.6 | Toque em "Reproduzir prévia". | GIF anima, vídeo toca, GLB anima, áudio toca. "Pausar prévia" para tudo. Anote o que não tocou. |
 | 9.7 | Ajuste algo, toque em **Salvar**, saia do editor e volte. Depois ajuste de novo e saia com o botão voltar do aparelho SEM salvar. | O salvo permanece. O pendente é gravado ao sair (aviso "Ajustes da cena salvos"). |
 | 9.8 | Duplique um item; remova outro (com a confirmação). | A cópia aparece deslocada e funciona independente; o removido some e, em Configurações, o uso de armazenamento diminui. |
 | 9.9 | "Abrir câmera" a partir do projeto e aponte para a tatuagem. | Os itens carregam ("Carregando itens: x/y") e aparecem sobre a tatuagem quando ela é reconhecida. A posição relativa bate com o que você montou na prévia (dentro do recorte). O botão "Moldura de teste" liga/desliga a moldura. |
@@ -190,9 +190,9 @@ Tenha 5 ou mais fotos (de preferência de câmera, grandes) e 1 PNG com transpar
 | # | O que fazer | Resultado esperado |
 |---|---|---|
 | 9.16 | No editor, escolha **uma** foto. | Entra como imagem comum, sem perguntar nada. |
-| 9.17 | Escolha **3 ou mais** fotos de uma vez. | Aparece a pergunta "Como quer adicioná-las?" com *Carrossel automático*, *N itens separados* e *Cancelar*; nada é gravado antes da resposta. Cancelar descarta. Numa seleção mista (fotos + um GLB), só o GLB entra na hora. |
-| 9.18 | Escolha *Carrossel automático*. | Um item "Carrossel · N imagens" fica selecionado, com a lista de imagens na ordem escolhida, tempo de cada imagem (padrão 3 s) e transição suave ligada. |
-| 9.19 | Na prévia, toque "Reproduzir mídia". Mude o tempo (ex.: 1 s e 10 s) e desligue a transição. | As imagens trocam sozinhas na ordem, dando a volta no fim; o tempo muda ao vivo; sem transição a troca é seca. Anote se há tela preta/vazia ou travada entre imagens. |
+| 9.17 | Escolha **3 ou mais** fotos de uma vez. | Aparece a pergunta "Como quer guardar esse momento?" com *Criar sequência automática*, *Guardar como N lembranças* e *Cancelar*; nada é gravado antes da resposta. Cancelar descarta. Numa seleção mista (fotos + um GLB), só o GLB entra na hora. |
+| 9.18 | Escolha *Criar sequência automática*. | Uma lembrança "Carrossel · N imagens" fica selecionada, com a lista de imagens na ordem escolhida, tempo de cada imagem (padrão 3 s) e transição suave ligada. |
+| 9.19 | Na prévia, toque "Reproduzir prévia". Mude o tempo (ex.: 1 s e 10 s) e desligue a transição. | As imagens trocam sozinhas na ordem, dando a volta no fim; o tempo muda ao vivo; sem transição a troca é seca. Anote se há tela preta/vazia ou travada entre imagens. |
 | 9.20 | Acrescente imagens ao carrossel e remova uma do meio e a primeira. Tente remover até sobrar uma. | A lista e a prévia acompanham; com uma imagem só, "Remover" fica desativado. |
 | 9.21 | Abra a câmera e aponte para a tatuagem; cubra-a e recupere. | O carrossel aparece ancorado e troca de imagem **só enquanto a tatuagem é vista**, continuando de onde parou ao recuperar. |
 | 9.22 | Monte um carrossel com 15 a 30 fotos grandes e deixe rodar 2 a 3 voltas na câmera. | Anote: engasgos ao trocar, aumento de memória/aquecimento, fechamento do navegador, imagens puladas com aviso. (As imagens são reduzidas a 1536 px e só a atual e a próxima ficam na memória.) |
@@ -202,7 +202,7 @@ Tenha 5 ou mais fotos (de preferência de câmera, grandes) e 1 PNG com transpar
 
 | # | O que fazer | Resultado esperado |
 |---|---|---|
-| 9.24 | Experimente os quatro layouts e cancele uma prévia; aplique outro, use Desfazer e Refazer. | O cancelamento restaura a disposição anterior; confirmar preserva os arquivos e permite desfazer/refazer. |
+| 9.24 | Experimente Mural, Arco, Composição livre e Roda de lembranças; cancele uma prévia e use outra, Desfazer e Refazer. | O cancelamento restaura a disposição anterior; confirmar preserva as lembranças e permite desfazer/refazer. |
 | 9.25 | Inicie a apresentação; pause, avance, volte, altere o intervalo e comece a arrastar. | A câmera percorre os itens suavemente, o intervalo muda, e a apresentação pausa ao editar. |
 | 9.26 | Repita seleção, arrasto, layouts e player com largura de celular; habilite movimento reduzido no sistema. | Barra de controles cabe na largura; dois dedos ajustam tamanho/giro; movimentos de foco ficam instantâneos com movimento reduzido. |
 

@@ -74,16 +74,16 @@ export const projectsView: View = (context, root) => {
         h(
           'section',
           { class: 'card' },
-          h('h2', { class: 'card-title' }, 'Nenhum projeto salvo'),
+          h('h2', { class: 'card-title' }, 'Nenhuma lembrança guardada'),
           h(
             'p',
             { class: 'muted' },
-            'Crie uma âncora a partir da foto da tatuagem e salve como projeto. Se você tem um backup de outro aparelho, importe-o.',
+            'Escolha uma foto de tatuagem e guarde nela as fotos, vídeos e sons que quer reencontrar. Se já tem um backup, você pode restaurá-lo.',
           ),
           h(
             'div',
             { class: 'row' },
-            h('button', { class: 'btn btn-primary', type: 'button', onclick: () => context.navigate('create') }, 'Criar âncora'),
+            h('button', { class: 'btn btn-primary', type: 'button', onclick: () => context.navigate('create') }, 'Criar uma lembrança'),
             h('button', { class: 'btn', type: 'button', onclick: () => context.navigate('import') }, 'Importar backup'),
           ),
         ),
@@ -149,7 +149,7 @@ export const projectsView: View = (context, root) => {
       });
       context.store.dispatch({ type: 'TARGET_LOADED' });
       if (info.variantKeyframes === 0 && record.referenceImage !== null) {
-        context.toast('Dica: este alvo é antigo. Recompile em "Meus projetos" para reconhecer melhor em ângulos fortes e pele esticada.');
+        context.toast('Dica: esta tatuagem usa um alvo antigo. Atualize-o em "Minhas lembranças" para reconhecer melhor em ângulos fortes e pele esticada.');
       }
       context.navigate('camera');
     }
@@ -247,7 +247,7 @@ export const projectsView: View = (context, root) => {
       } else if (mode === 'idle') {
         const main: HTMLElement[] = [];
         if (health.status === 'ready') {
-          main.push(h('button', { class: 'btn btn-primary', type: 'button', onclick: () => void guarded(open, 'Abrindo o alvo salvo…') }, 'Abrir câmera'));
+          main.push(h('button', { class: 'btn btn-primary', type: 'button', onclick: () => void guarded(open, 'Preparando suas lembranças…') }, 'Rever na câmera'));
         }
         if (offerRecompile && hasImage) {
           main.push(
@@ -269,7 +269,7 @@ export const projectsView: View = (context, root) => {
                 context.navigate('editor');
               },
             },
-            record.scene.items.length > 0 ? `Editar itens (${record.scene.items.length})` : 'Adicionar itens',
+            record.scene.items.length > 0 ? `Organizar lembranças (${record.scene.items.length})` : 'Adicionar lembranças',
           ),
         );
         const more: HTMLElement[] = [
@@ -337,7 +337,7 @@ export const projectsView: View = (context, root) => {
     h(
       'main',
       { class: 'screen' },
-      topBar('Meus projetos', () => context.navigate('home')),
+      topBar('Minhas lembranças', () => context.navigate('home')),
       h(
         'div',
         { class: 'row' },

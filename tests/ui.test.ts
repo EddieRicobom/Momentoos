@@ -170,11 +170,11 @@ async function addProject(repo: ProjectRepository, name: string, seed = 1) {
   });
 }
 
-describe('Meus projetos', () => {
+describe('Minhas lembranças', () => {
   it('sem projetos, mostra o estado vazio com caminhos para criar ou importar', async () => {
     const { root } = await mount(projectsView);
-    await until(() => root.textContent?.includes('Nenhum projeto salvo'));
-    expect(hasButton(root, 'Criar âncora')).toBe(true);
+    await until(() => root.textContent?.includes('Nenhuma lembrança guardada'));
+    expect(hasButton(root, 'Criar uma lembrança')).toBe(true);
     expect(hasButton(root, 'Importar backup')).toBe(true);
   });
 
@@ -195,9 +195,9 @@ describe('Meus projetos', () => {
     const repo = await freshRepository();
     const record = await addProject(repo, 'Braço', 1);
     const h = await mount(projectsView, repo);
-    await until(() => hasButton(h.root, 'Abrir câmera'));
+    await until(() => hasButton(h.root, 'Rever na câmera'));
 
-    button(h.root, 'Abrir câmera').click();
+    button(h.root, 'Rever na câmera').click();
     await until(() => h.navigations.includes('camera'));
 
     expect(vi.mocked(compileTarget)).not.toHaveBeenCalled();
@@ -207,13 +207,13 @@ describe('Meus projetos', () => {
     expect(h.context.store.getState().status).toBe('target-ready');
   });
 
-  it('"Adicionar itens" guarda o projeto escolhido e abre o editor; com itens o botão mostra a contagem', async () => {
+  it('"Adicionar lembranças" guarda a tatuagem escolhida e abre a organização; com conteúdo mostra a contagem', async () => {
     const repo = await freshRepository();
     const record = await addProject(repo, 'Braço', 1);
     const h = await mount(projectsView, repo);
-    await until(() => hasButton(h.root, 'Adicionar itens'));
+    await until(() => hasButton(h.root, 'Adicionar lembranças'));
 
-    button(h.root, 'Adicionar itens').click();
+    button(h.root, 'Adicionar lembranças').click();
     expect(h.editing.id).toBe(record.id);
     expect(h.navigations).toEqual(['editor']);
     h.cleanup();
@@ -223,7 +223,7 @@ describe('Meus projetos', () => {
     await addItem(repo, record.id, { file: { data: signedBytes('image/png'), fileName: 'a.png' } });
     await addItem(repo, record.id, { file: { data: signedBytes('image/png', 64, 2), fileName: 'b.png' } });
     const again = await mount(projectsView, repo);
-    await until(() => hasButton(again.root, 'Editar itens (2)'));
+    await until(() => hasButton(again.root, 'Organizar lembranças (2)'));
   });
 
   it('alvo corrompido: avisa, NÃO abre a câmera e oferece recompilar a partir da foto', async () => {
@@ -232,9 +232,9 @@ describe('Meus projetos', () => {
     // Mesmo tamanho, conteúdo diferente: só o hash denuncia.
     await repo.save(record, { anchor: { mimeType: 'application/octet-stream', data: toBuffer(makeMind({ seed: 9, filler: 200 })) } });
     const h = await mount(projectsView, repo);
-    await until(() => hasButton(h.root, 'Abrir câmera'));
+    await until(() => hasButton(h.root, 'Rever na câmera'));
 
-    button(h.root, 'Abrir câmera').click();
+    button(h.root, 'Rever na câmera').click();
     await until(() => h.root.textContent?.includes('corrompido'));
     expect(h.navigations).toEqual([]);
     expect(h.targets).toEqual([]);
@@ -246,13 +246,13 @@ describe('Meus projetos', () => {
     const record = await addProject(repo, 'Braço', 1);
     await repo.save(record, { anchor: { mimeType: 'application/octet-stream', data: toBuffer(makeMind({ seed: 9, filler: 200 })) } });
     const h = await mount(projectsView, repo);
-    await until(() => hasButton(h.root, 'Abrir câmera'));
-    button(h.root, 'Abrir câmera').click();
+    await until(() => hasButton(h.root, 'Rever na câmera'));
+    button(h.root, 'Rever na câmera').click();
     await until(() => hasButton(h.root, 'Recompilar'));
 
     button(h.root, 'Recompilar').click();
     await until(() => vi.mocked(compileTarget).mock.calls.length === 1);
-    await until(() => !h.root.textContent?.includes('corrompido') && hasButton(h.root, 'Abrir câmera'));
+    await until(() => !h.root.textContent?.includes('corrompido') && hasButton(h.root, 'Rever na câmera'));
 
     const reopened = await openProjectAnchor(repo, record.id);
     expect(reopened.record.anchor).toMatchObject({ width: 800, height: 600 });
@@ -267,15 +267,15 @@ describe('Meus projetos', () => {
       anchor: { mimeType: 'application/octet-stream', data: toBuffer(makeMind({ seed: 9, filler: 200 })) },
     });
     const h = await mount(projectsView, repo);
-    await until(() => hasButton(h.root, 'Abrir câmera'));
-    button(h.root, 'Abrir câmera').click();
+    await until(() => hasButton(h.root, 'Rever na câmera'));
+    button(h.root, 'Rever na câmera').click();
     await until(() => hasButton(h.root, 'Recompilar'));
     button(h.root, 'Recompilar').click();
     await until(() => h.root.textContent?.includes('foto de referência está corrompida'));
     expect(vi.mocked(compileTarget)).not.toHaveBeenCalled();
   });
 
-  it('projeto que precisa recompilar mostra o motivo e o botão certo (sem "Abrir câmera")', async () => {
+  it('projeto que precisa recompilar mostra o motivo e o botão certo (sem "Rever na câmera")', async () => {
     const repo = await freshRepository();
     const old = makeMind({ version: 1 });
     const image = fakeImage(3, 100);
@@ -289,7 +289,7 @@ describe('Meus projetos', () => {
 
     expect(root.querySelector('.badge')?.textContent).toBe('Precisa recompilar');
     expect(root.textContent).toContain('formato incompatível');
-    expect(hasButton(root, 'Abrir câmera')).toBe(false);
+    expect(hasButton(root, 'Rever na câmera')).toBe(false);
     expect(hasButton(root, 'Recompilar')).toBe(true);
   });
 
@@ -330,7 +330,7 @@ describe('Meus projetos', () => {
 
     button(root, 'Excluir').click();
     button(root, 'Excluir definitivamente').click();
-    await until(() => root.textContent?.includes('Nenhum projeto salvo'));
+    await until(() => root.textContent?.includes('Nenhuma lembrança guardada'));
     expect(await repo.getEntry(record.id)).toBeNull();
     expect(await repo.getFile(record.id, 'anchor')).toBeNull();
     expect(await repo.getFile(record.id, 'referenceImage')).toBeNull();
@@ -359,7 +359,7 @@ describe('Meus projetos', () => {
     await until(() => root.querySelectorAll('.project-card').length === 1);
     expect(root.querySelector('.badge')?.textContent).toBe('Versão mais nova');
     expect(root.textContent).toContain('atualize o app');
-    expect(hasButton(root, 'Abrir câmera')).toBe(false);
+    expect(hasButton(root, 'Rever na câmera')).toBe(false);
   });
 
   it('exportar um projeto gera um ZIP com o manifesto e os arquivos dele', async () => {
@@ -499,7 +499,7 @@ describe('Importar backup', () => {
   });
 });
 
-describe('Criar âncora: salvar projeto', () => {
+describe('Criar lembrança', () => {
   async function loadMind(root: HTMLElement, file: File): Promise<void> {
     const input = root.querySelectorAll('input[type=file]')[2] as HTMLInputElement; // galeria, câmera, .mind
     Object.defineProperty(input, 'files', { value: [file], configurable: true });
@@ -510,13 +510,13 @@ describe('Criar âncora: salvar projeto', () => {
     const h = await mount(createView);
     const mind = makeMind({ seed: 5, width: 700, height: 500, filler: 80 });
     await loadMind(h.root, new File([mind.slice()], 'braco.mind'));
-    await until(() => hasButton(h.root, 'Salvar projeto'));
+    await until(() => hasButton(h.root, 'Guardar lembrança'));
 
     expect(h.root.textContent).toContain('não para recompilar');
     const name = h.root.querySelector('input.text-input') as HTMLInputElement;
     expect(name.value).toBe('braco');
     name.value = 'Meu braço';
-    button(h.root, 'Salvar projeto').click();
+    button(h.root, 'Guardar lembrança').click();
     await until(() => h.root.textContent?.includes('Salvo neste aparelho'));
 
     const [entry] = await h.repo.list();
@@ -527,24 +527,24 @@ describe('Criar âncora: salvar projeto', () => {
   it('nome vazio: mostra o erro e não salva', async () => {
     const h = await mount(createView);
     await loadMind(h.root, new File([makeMind().slice()], 'x.mind'));
-    await until(() => hasButton(h.root, 'Salvar projeto'));
+    await until(() => hasButton(h.root, 'Guardar lembrança'));
     (h.root.querySelector('input.text-input') as HTMLInputElement).value = '   ';
-    button(h.root, 'Salvar projeto').click();
+    button(h.root, 'Guardar lembrança').click();
     await until(() => h.root.textContent?.includes('Dê um nome'));
     expect(await h.repo.list()).toEqual([]);
-    expect(hasButton(h.root, 'Salvar projeto')).toBe(true);
+    expect(hasButton(h.root, 'Guardar lembrança')).toBe(true);
   });
 
   it('arquivo .mind de versão incompatível é recusado antes de qualquer salvamento', async () => {
     const h = await mount(createView);
     await loadMind(h.root, new File([makeMind({ version: 1 }).slice()], 'velho.mind'));
     await until(() => h.context.store.getState().status === 'error');
-    expect(hasButton(h.root, 'Salvar projeto')).toBe(false);
+    expect(hasButton(h.root, 'Guardar lembrança')).toBe(false);
     expect(await h.repo.list()).toEqual([]);
   });
 });
 
-describe('Criar âncora: recorte e contraste', () => {
+describe('Criar lembrança: recorte e contraste', () => {
   async function pickPhoto(root: HTMLElement): Promise<void> {
     const input = root.querySelectorAll('input[type=file]')[0] as HTMLInputElement;
     Object.defineProperty(input, 'files', { value: [new File(['x'], 'minha-foto.jpg', { type: 'image/jpeg' })], configurable: true });
@@ -580,7 +580,7 @@ describe('Criar âncora: recorte e contraste', () => {
     expect(target.referenceImage?.blob.type).toBe('image/png');
     expect(target.note).toBe('Recorte: sim · Contraste: Equilibrado');
 
-    await until(() => hasButton(h.root, 'Salvar projeto'));
+    await until(() => hasButton(h.root, 'Guardar lembrança'));
     expect((h.root.querySelector('input.text-input') as HTMLInputElement).value).toMatch(/^Tatuagem \d\d\/\d\d\/\d{4} · Equilibrado$/);
   });
 
@@ -607,8 +607,8 @@ describe('Criar âncora: recorte e contraste', () => {
     strong.checked = true;
     strong.dispatchEvent(new Event('change'));
     button(h.root, 'Compilar alvo').click();
-    await until(() => hasButton(h.root, 'Salvar projeto'));
-    button(h.root, 'Salvar projeto').click();
+    await until(() => hasButton(h.root, 'Guardar lembrança'));
+    button(h.root, 'Guardar lembrança').click();
     await until(() => h.root.textContent?.includes('Salvo neste aparelho'));
 
     const [entry] = await h.repo.list();
@@ -653,7 +653,7 @@ describe('Criar âncora: recorte e contraste', () => {
     button(h.root, 'Compilar alvo').click();
     await until(() => h.context.store.getState().status === 'error');
     expect(h.targets).toEqual([]);
-    expect(hasButton(h.root, 'Salvar projeto')).toBe(false);
+    expect(hasButton(h.root, 'Guardar lembrança')).toBe(false);
   });
 });
 

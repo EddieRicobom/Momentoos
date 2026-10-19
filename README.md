@@ -45,7 +45,7 @@ Etapa C (persistência):
 
 - Salvar o alvo compilado (e a foto de referência) como **projeto** no
   aparelho (IndexedDB), com nome, e reabri-lo depois **sem recompilar**.
-- "Meus projetos": listar, abrir a câmera, renomear, excluir (com confirmação),
+- "Minhas lembranças": listar cada tatuagem com seu conteúdo associado, rever na câmera, renomear, excluir (com confirmação),
   exportar um projeto e **recompilar** a partir da foto guardada quando o alvo
   estiver corrompido ou em formato antigo.
 - Exportar e importar **backup em ZIP** (`.tattoo-ar.zip`), com verificação de
@@ -66,20 +66,20 @@ Etapa D (cena 3D ancorada):
   (MP3, OGG, WAV, M4A). Cada item tem posição, altura, giro, inclinação,
   tamanho, deslocamento, opacidade e opções próprias (repetir, mudo, volume,
   animação do modelo).
-- Editor ("Meus projetos" → "Adicionar itens"): adicionar vários arquivos,
+- Organizar lembranças ("Minhas lembranças" → "Adicionar lembranças"): adicionar vários arquivos,
   duplicar, remover, ocultar, e ajustar cada item numa **prévia 3D sobre a foto de
   referência** (de frente ou inclinada; tocar seleciona, arrastar com um dedo posiciona e
   com **dois dedos** o item selecionado gira (torcendo) e muda de tamanho
   (afastando ou aproximando os dedos).
 - **Prévia antes de adicionar**: os arquivos não são gravados até confirmar; a
   tela mostra uma miniatura e a posição inicial no alvo. É possível cancelar.
-- **Layouts prontos**: Galeria, Semicírculo, Composição livre e Carrossel reorganizam
-  os itens visuais e preservam arquivos e nomes. A prévia pode ser confirmada,
-  cancelada ou desfeita. Layout Carrossel organiza os objetos; não inicia a
-  apresentação automática.
-- **Apresentação automática**: iniciar, pausar, avançar, voltar e escolher intervalos
-  de 2 a 8 segundos. A câmera centraliza cada objeto com transição suave; editar
-  pausa a apresentação, e movimento reduzido desativa as transições.
+- **Formas de reunir lembranças**: Mural, Arco, Composição livre e Roda de lembranças
+  reorganizam os conteúdos visuais e preservam arquivos e nomes. A prévia pode ser
+  confirmada, cancelada ou desfeita. A Roda organiza os conteúdos; "Rever lembranças"
+  inicia a apresentação automática separadamente.
+- **Rever lembranças**: iniciar, pausar, avançar, voltar e escolher intervalos de 2 a
+  8 segundos. A câmera centraliza cada memória com transição suave; ao organizar, a
+  apresentação pausa, e movimento reduzido desativa as transições.
 - **Alinhamento**: a grade opcional usa passos de 5%; os botões Alinhar X/Y alinham
   com o item visual mais próximo. O arrasto mantém os limites do objeto dentro do
   alvo, quando o tamanho do objeto permite.
@@ -119,7 +119,7 @@ Etapa D (cena 3D ancorada):
   Se o navegador bloquear o autoplay, aparece "Tocar áudio e vídeo".
 - Os arquivos dos itens ficam no IndexedDB e entram no backup ZIP (formato 3;
   backups do formato 1 continuam importando).
-- **Música da apresentação**: escolha um áudio local do projeto ou cole um link
+- **Trilha para rever lembranças**: escolha um áudio local da lembrança ou cole um link
   HTTPS do YouTube (watch, youtu.be, Shorts, live ou embed). A faixa só começa ao
   tocar em Reproduzir; YouTube exige internet e segue as restrições do próprio serviço.
   O player aparece no editor, fora da foto ancorada.

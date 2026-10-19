@@ -15,24 +15,24 @@ export const homeView: View = (context, root) => {
 
   const items: MenuItem[] = [
     {
-      title: 'Meus projetos',
-      hint: 'Tatuagens e cenas guardadas neste aparelho',
+      title: 'Minhas lembranças',
+      hint: 'Tatuagens e momentos guardados neste aparelho',
       icon: 'folder',
       run: () => context.navigate('projects'),
     },
     {
-      title: 'Criar âncora',
-      hint: 'Foto da tatuagem → alvo de rastreamento',
+      title: 'Criar uma lembrança',
+      hint: 'Escolha uma tatuagem para reencontrar seus momentos',
       icon: 'plus',
       run: () => context.navigate('create'),
     },
     {
-      title: 'Abrir câmera',
-      hint: 'Procurar a tatuagem e ver o objeto virtual',
+      title: 'Rever na câmera',
+      hint: 'Aponte para a tatuagem e reveja os momentos guardados',
       icon: 'camera',
       run: () => {
         if (!context.getTarget()) {
-          context.toast('A câmera precisa de um alvo: abra um projeto salvo ou crie uma âncora.');
+          context.toast('Para rever suas lembranças, abra uma tatuagem salva ou crie uma nova.');
           context.navigate('projects');
           return;
         }
@@ -40,14 +40,14 @@ export const homeView: View = (context, root) => {
       },
     },
     {
-      title: 'Importar projeto',
-      hint: 'Trazer um backup de outro aparelho',
+      title: 'Importar lembranças',
+      hint: 'Restaurar um backup de outro aparelho',
       icon: 'import',
       run: () => context.navigate('import'),
     },
     {
       title: 'Exportar backup',
-      hint: 'Levar seus projetos para outro aparelho',
+      hint: 'Levar suas lembranças para outro aparelho',
       icon: 'export',
       run: () => context.navigate('export'),
     },
@@ -95,7 +95,7 @@ export const homeView: View = (context, root) => {
         h(
           'p',
           { class: 'hero-sub' },
-          'Conteúdo digital preso à sua tatuagem, reconhecida pela câmera. Tudo roda neste aparelho: nenhuma foto sai daqui.',
+          'Associe fotos, vídeos e sons a uma tatuagem para reencontrar seus momentos na câmera. Tudo fica neste aparelho.',
         ),
         chip.element,
       ),

@@ -44,7 +44,7 @@ export const exportView: View = (context, root) => {
           { class: 'card' },
           h('h2', { class: 'card-title' }, 'Nada para exportar'),
           h('p', { class: 'muted' }, 'Não há projetos íntegros salvos neste aparelho.'),
-          h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: () => context.navigate('projects') }, 'Meus projetos')),
+          h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: () => context.navigate('projects') }, 'Minhas lembranças')),
         ),
       );
       return;

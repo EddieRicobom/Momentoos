@@ -89,22 +89,22 @@ export const editorView: View = (context, root) => {
   const counter = h('span', { class: 'muted' });
   const frontButton = h('button', { class: 'btn', type: 'button', onclick: () => setView('front') }, 'De frente');
   const tiltedButton = h('button', { class: 'btn', type: 'button', onclick: () => setView('tilted') }, 'Inclinada');
-  const playButton = h('button', { class: 'btn btn-play', type: 'button', onclick: () => void togglePlay() }, 'Reproduzir mídia');
-  const focusButton = h('button', { class: 'btn focus-camera', type: 'button', 'aria-label': 'Centralizar câmera no item selecionado', title: 'Centralizar câmera', onclick: () => stage?.focusItem(selectedId) }, icon('center'), h('span', { class: 'focus-label' }, 'Focar'));
-  const layoutBox = h('section', { class: 'card layout-box', 'aria-label': 'Layouts prontos' });
-  const presentationBox = h('section', { class: 'card presentation-box', 'aria-label': 'Apresentação automática' });
-  const musicBox = h('section', { class: 'card music-box', 'aria-label': 'Música da apresentação' });
+  const playButton = h('button', { class: 'btn btn-play', type: 'button', onclick: () => void togglePlay() }, 'Reproduzir prévia');
+  const focusButton = h('button', { class: 'btn focus-camera', type: 'button', 'aria-label': 'Ver de perto a lembrança selecionada', title: 'Ver de perto', onclick: () => stage?.focusItem(selectedId) }, icon('center'), h('span', { class: 'focus-label' }, 'Ver de perto'));
+  const layoutBox = h('section', { class: 'card layout-box', 'aria-label': 'Formas de reunir lembranças' });
+  const presentationBox = h('section', { class: 'card presentation-box', 'aria-label': 'Rever lembranças' });
+  const musicBox = h('section', { class: 'card music-box', 'aria-label': 'Trilha para rever lembranças' });
   const choiceBox = h('div', { class: 'choice-box', role: 'group', 'aria-label': 'Como adicionar as imagens' });
   choiceBox.hidden = true;
   const addConfirmBox = h('div', { class: 'add-confirm-box', role: 'group', 'aria-label': 'Confirmar adição de arquivos' });
   addConfirmBox.hidden = true;
-  const slideInput = h('input', { type: 'file', multiple: true, accept: '.png,.jpg,.jpeg,.webp', class: 'visually-hidden', 'aria-label': 'Adicionar imagens ao carrossel' });
+  const slideInput = h('input', { type: 'file', multiple: true, accept: '.png,.jpg,.jpeg,.webp', class: 'visually-hidden', 'aria-label': 'Adicionar fotos a esta sequência de lembranças' });
   slideInput.addEventListener('change', () => {
     const files = [...(slideInput.files ?? [])];
     slideInput.value = '';
     if (files.length > 0) void addToCarousel(files);
   });
-  const fileInput = h('input', { type: 'file', multiple: true, accept: ACCEPT, class: 'visually-hidden', 'aria-label': 'Adicionar arquivos' });
+  const fileInput = h('input', { type: 'file', multiple: true, accept: ACCEPT, class: 'visually-hidden', 'aria-label': 'Adicionar fotos, vídeos ou sons' });
   fileInput.addEventListener('change', () => {
     const files = [...(fileInput.files ?? [])];
     fileInput.value = '';
@@ -115,7 +115,7 @@ export const editorView: View = (context, root) => {
     'label',
     { class: 'btn btn-primary btn-small add-chip' },
     icon('plus'),
-    'Adicionar arquivos',
+    'Adicionar lembranças',
     fileInput,
   );
 
@@ -231,7 +231,7 @@ export const editorView: View = (context, root) => {
   async function togglePlay(): Promise<void> {
     playing = !playing;
     playButton.setAttribute('aria-pressed', String(playing));
-    playButton.textContent = playing ? 'Pausar mídia' : 'Reproduzir mídia';
+    playButton.textContent = playing ? 'Pausar prévia' : 'Reproduzir prévia';
     await runtime?.setTracking(playing);
   }
 
@@ -263,7 +263,7 @@ export const editorView: View = (context, root) => {
   function startPresentation(): void {
     const items = presentationItems();
     if (items.length < 2) {
-      say('Adicione pelo menos dois itens visuais para iniciar a apresentação.');
+      say('Adicione pelo menos duas lembranças visuais para começar a rever.');
       return;
     }
     if (presentationTimer !== null) {
@@ -294,8 +294,8 @@ export const editorView: View = (context, root) => {
     const items = presentationItems();
     const active = presentationTimer !== null;
     presentationBox.replaceChildren(
-      h('h2', { class: 'card-title' }, 'Apresentação automática'),
-      h('p', { class: 'muted' }, 'Percorre os itens visuais e centraliza cada um com uma transição suave. A edição pausa a apresentação.'),
+      h('h2', { class: 'card-title' }, 'Rever lembranças'),
+      h('p', { class: 'muted' }, 'Passe de uma lembrança para a próxima com movimentos suaves. Ao organizar, a apresentação pausa.'),
       h('label', { class: 'field-label' }, 'Intervalo', h('select', {
         class: 'text-input',
         'aria-label': 'Intervalo da apresentação',
@@ -309,10 +309,10 @@ export const editorView: View = (context, root) => {
       }, ...[2, 3, 4, 6, 8].map((seconds) => h('option', { value: seconds * 1000, selected: presentationInterval === seconds * 1000 }, `${seconds} segundos`)))),
       h('div', { class: 'row' },
         h('button', { class: 'btn', type: 'button', disabled: items.length < 2, onclick: () => presentationStep(-1) }, 'Voltar'),
-        h('button', { class: 'btn btn-primary', type: 'button', disabled: items.length < 2, 'aria-pressed': String(active), onclick: startPresentation }, active ? 'Pausar' : 'Iniciar'),
+        h('button', { class: 'btn btn-primary', type: 'button', disabled: items.length < 2, 'aria-pressed': String(active), onclick: startPresentation }, active ? 'Pausar' : 'Começar a rever'),
         h('button', { class: 'btn', type: 'button', disabled: items.length < 2, onclick: () => presentationStep(1) }, 'Avançar'),
       ),
-      h('p', { class: 'muted' }, `${items.length} ${items.length === 1 ? 'item' : 'itens'} na apresentação`),
+      h('p', { class: 'muted' }, `${items.length} ${items.length === 1 ? 'lembrança' : 'lembranças'} nesta apresentação`),
     );
   }
 
@@ -326,12 +326,12 @@ export const editorView: View = (context, root) => {
     draft = arrangeItems(layoutOriginal, layout, aspect);
     for (const item of draft) runtime?.updateItem(item);
     layoutBox.replaceChildren(
-      h('h2', { class: 'card-title' }, `Prévia: ${SCENE_LAYOUTS.find((entry) => entry.id === layout)?.label ?? 'Layout'}`),
-      h('p', { class: 'muted' }, 'Os arquivos e nomes ficam preservados. A disposição só é salva quando você confirma e toca em Salvar.'),
-      checkbox('Usar a música selecionada na apresentação', presentationMusicAttached, (value) => { presentationMusicAttached = value; previewLayout(layout); }),
+      h('h2', { class: 'card-title' }, `Prévia: ${SCENE_LAYOUTS.find((entry) => entry.id === layout)?.label ?? 'Disposição'}`),
+      h('p', { class: 'muted' }, 'Suas lembranças e seus nomes continuam iguais. A disposição só muda quando você confirma e toca em Salvar.'),
+      checkbox('Tocar a trilha escolhida ao rever as lembranças', presentationMusicAttached, (value) => { presentationMusicAttached = value; previewLayout(layout); }),
       h('div', { class: 'row' },
-        h('button', { class: 'btn btn-primary', type: 'button', onclick: confirmLayout }, 'Aplicar disposição'),
-        h('button', { class: 'btn', type: 'button', onclick: cancelLayout }, 'Cancelar prévia'),
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: confirmLayout }, 'Usar esta disposição'),
+        h('button', { class: 'btn', type: 'button', onclick: cancelLayout }, 'Voltar'),
       ),
     );
     redrawList();
@@ -369,12 +369,12 @@ export const editorView: View = (context, root) => {
   function redrawLayoutBox(): void {
     if (layoutOriginal) return;
     layoutBox.replaceChildren(
-      h('h2', { class: 'card-title' }, 'Layouts prontos'),
-      h('p', { class: 'muted' }, 'Veja uma disposição na prévia antes de aplicar. Escolha a música abaixo e marque se ela deve tocar na apresentação.'),
+      h('h2', { class: 'card-title' }, 'Formas de reunir suas lembranças'),
+      h('p', { class: 'muted' }, 'Escolha como quer reunir seus momentos. Experimente na prévia; para percorrer um por um, comece a rever.'),
       h('div', { class: 'layout-options' }, ...SCENE_LAYOUTS.map((layout) =>
         h('button', { class: 'btn layout-option', type: 'button', onclick: () => previewLayout(layout.id) },
           h('span', { class: `layout-thumb layout-thumb-${layout.id}`, 'aria-hidden': 'true' }, ...Array.from({ length: 5 }, () => h('i'))),
-          h('strong', {}, layout.label),
+          h('span', { class: 'layout-copy' }, h('strong', {}, layout.label), h('span', { class: 'layout-description' }, layout.description)),
         ),
       )),
     );
@@ -461,7 +461,7 @@ export const editorView: View = (context, root) => {
     const audioItems = draft.filter((item) => item.type === 'audio');
     const select = h('select', {
       class: 'text-input',
-      'aria-label': 'Música local da apresentação',
+      'aria-label': 'Trilha sonora guardada com esta lembrança',
       onchange: (event: Event) => {
         if (presentationMusicId) void runtime?.setItemActive(presentationMusicId, false);
         presentationMusicId = (event.currentTarget as HTMLSelectElement).value || null;
@@ -478,8 +478,8 @@ export const editorView: View = (context, root) => {
       onchange: (event: Event) => { youtubeMusicUrl = (event.currentTarget as HTMLInputElement).value.trim(); },
     });
     const children: Node[] = [
-      h('h2', { class: 'card-title' }, 'Música da apresentação'),
-      h('p', { class: 'muted' }, 'O áudio só começa depois de você tocar em Reproduzir. Selecione um arquivo que já está no projeto ou forneça um link do YouTube.'),
+      h('h2', { class: 'card-title' }, 'Trilha para rever suas lembranças'),
+      h('p', { class: 'muted' }, 'Escolha uma trilha para acompanhar a apresentação. O áudio só começa quando você tocar em Reproduzir. Use um som guardado com esta lembrança ou um link do YouTube.'),
       h('label', { class: 'field-label' }, 'Arquivo de áudio', select),
       h('button', { class: 'btn', type: 'button', disabled: !presentationMusicId, 'aria-pressed': String(localMusicPlaying), onclick: toggleLocalMusic }, localMusicPlaying ? 'Pausar faixa local' : 'Reproduzir faixa local'),
       h('label', { class: 'field-label' }, 'YouTube', urlInput),
@@ -893,7 +893,7 @@ export const editorView: View = (context, root) => {
     if (!item) {
       panel.replaceChildren(
         h('h2', { class: 'card-title' }, 'Item selecionado'),
-        h('p', { class: 'muted' }, draft.length === 0 ? 'Adicione arquivos para começar.' : 'Toque num item da lista ou na prévia para ajustá-lo.'),
+        h('p', { class: 'muted' }, draft.length === 0 ? 'Adicione fotos, vídeos ou sons para começar.' : 'Toque numa lembrança da lista ou da prévia para ajustá-la.'),
       );
       return;
     }
@@ -1029,7 +1029,7 @@ export const editorView: View = (context, root) => {
           { class: 'row' },
           h('label', { class: 'btn', 'aria-disabled': String(busy || slides.length >= MAX_CAROUSEL_SLIDES) }, 'Adicionar imagens', slideInput),
         ),
-        h('p', { class: 'muted' }, 'As imagens trocam sozinhas só enquanto a tatuagem está sendo vista; na prévia, use "Reproduzir mídia" para ver a troca. A ordem é a da lista.'),
+        h('p', { class: 'muted' }, 'As fotos trocam sozinhas enquanto a tatuagem está sendo vista; na prévia, use "Reproduzir prévia" para ver a troca. A ordem é a da lista.'),
       );
     }
 
@@ -1049,7 +1049,7 @@ export const editorView: View = (context, root) => {
         : h(
             'div',
             { class: 'row' },
-            h('button', { class: 'btn btn-small', type: 'button', disabled: busy || draft.length >= MAX_ITEMS_PER_PROJECT, onclick: () => void duplicateSelected() }, 'Duplicar'),
+            h('button', { class: 'btn btn-small', type: 'button', disabled: busy || draft.length >= MAX_ITEMS_PER_PROJECT, onclick: () => void duplicateSelected() }, 'Fazer cópia'),
             item.type === 'audio'
               ? null
               : h('button', { class: 'btn btn-small', type: 'button', onclick: () => { const current = selected(); if (current) { replaceDraft(resetTransform(current)); drawPanel(); } } }, 'Restaurar posição'),
@@ -1063,7 +1063,7 @@ export const editorView: View = (context, root) => {
   // ------------------------------------------------------------------ desenho
 
   function redrawList(): void {
-    counter.textContent = `${draft.length}/${MAX_ITEMS_PER_PROJECT} itens`;
+    counter.textContent = `${draft.length}/${MAX_ITEMS_PER_PROJECT} lembranças`;
     addLabel.setAttribute('aria-disabled', String(draft.length >= MAX_ITEMS_PER_PROJECT));
     list.replaceChildren(
       h('li', {}, addLabel),
@@ -1112,17 +1112,17 @@ export const editorView: View = (context, root) => {
     }
     const files = choice;
     choiceBox.replaceChildren(
-      h('p', {}, `Você escolheu ${files.length} imagens. Como quer adicioná-las?`),
+      h('p', {}, `Você escolheu ${files.length} fotos. Como quer guardar esse momento?`),
       h(
         'p',
         { class: 'muted' },
-        `Carrossel: um item só que troca de imagem sozinho, na ordem escolhida (até ${MAX_CAROUSEL_SLIDES} imagens). Separadas: ${files.length} itens, que você posiciona um a um.`,
+        `Sequência: as fotos mudam sozinhas, na ordem escolhida (até ${MAX_CAROUSEL_SLIDES} fotos). Separadas: ${files.length} lembranças para organizar uma a uma.`,
       ),
       h(
         'div',
         { class: 'row' },
-        h('button', { class: 'btn btn-primary', type: 'button', disabled: busy, onclick: () => void addCarouselFrom(files) }, 'Carrossel automático'),
-        h('button', { class: 'btn', type: 'button', disabled: busy, onclick: () => void addSeparately(files) }, `${files.length} itens separados`),
+        h('button', { class: 'btn btn-primary', type: 'button', disabled: busy, onclick: () => void addCarouselFrom(files) }, 'Criar sequência automática'),
+        h('button', { class: 'btn', type: 'button', disabled: busy, onclick: () => void addSeparately(files) }, `Guardar como ${files.length} lembranças`),
         h('button', { class: 'btn btn-ghost', type: 'button', disabled: busy, onclick: () => { choice = null; redrawChoice(); } }, 'Cancelar'),
       ),
     );
@@ -1169,9 +1169,9 @@ export const editorView: View = (context, root) => {
         h(
           'main',
           { class: 'screen' },
-          topBar('Itens do projeto', () => context.navigate('projects')),
-          h('p', { class: 'muted' }, 'Nenhum projeto escolhido. Abra um projeto em "Meus projetos" e toque em "Editar itens".'),
-          h('button', { class: 'btn btn-primary', type: 'button', onclick: () => context.navigate('projects') }, 'Meus projetos'),
+          topBar('Lembranças desta tatuagem', () => context.navigate('projects')),
+          h('p', { class: 'muted' }, 'Nenhuma lembrança escolhida. Abra uma tatuagem salva em "Minhas lembranças".'),
+          h('button', { class: 'btn btn-primary', type: 'button', onclick: () => context.navigate('projects') }, 'Minhas lembranças'),
         ),
       );
       return;
@@ -1181,7 +1181,7 @@ export const editorView: View = (context, root) => {
       h(
         'main',
         { class: 'screen editor' },
-        topBar('Itens do projeto', () => context.navigate('projects')),
+        topBar('Lembranças desta tatuagem', () => context.navigate('projects')),
         h('p', { class: 'muted' }, 'Carregando…'),
       ),
     );
@@ -1201,9 +1201,9 @@ export const editorView: View = (context, root) => {
         h(
           'main',
           { class: 'screen' },
-          topBar('Itens do projeto', () => context.navigate('projects')),
+          topBar('Lembranças desta tatuagem', () => context.navigate('projects')),
           h('p', { class: 'form-error', role: 'alert' }, describeError(error)),
-          h('button', { class: 'btn', type: 'button', onclick: () => context.navigate('projects') }, 'Meus projetos'),
+          h('button', { class: 'btn', type: 'button', onclick: () => context.navigate('projects') }, 'Minhas lembranças'),
         ),
       );
     }
@@ -1294,7 +1294,7 @@ export const editorView: View = (context, root) => {
           h(
             'section',
             { class: 'stack' },
-            h('div', { class: 'items-head' }, h('h2', { class: 'card-title' }, 'Itens'), counter),
+            h('div', { class: 'items-head' }, h('h2', { class: 'card-title' }, 'Suas lembranças'), counter),
             list,
             addConfirmBox,
             choiceBox,
@@ -1309,16 +1309,16 @@ export const editorView: View = (context, root) => {
           h(
             'details',
             { class: 'fine-tune help-box' },
-            h('summary', {}, 'Como usar e formatos aceitos'),
+            h('summary', {}, 'Ajustes e formatos aceitos'),
             h(
               'p',
               { class: 'muted' },
-              'Toque num item para selecioná-lo, arraste com um dedo para posicionar e use dois dedos sobre a prévia para girar (torcendo) e mudar o tamanho (afastando ou aproximando) o item selecionado. A foto é o alvo reconhecido na câmera; o centro dela é o centro do alvo.',
+              'Toque numa lembrança para escolhê-la, arraste com um dedo para posicionar e use dois dedos sobre a prévia para girar (torcendo) e mudar o tamanho (afastando ou aproximando). A foto é o alvo reconhecido na câmera; o centro dela é o centro do alvo.',
             ),
             h(
               'p',
               { class: 'muted' },
-              `Aceita imagem (PNG, JPG, WebP), GIF, vídeo (MP4, WebM), modelo 3D (GLB, sem compressão Draco) e áudio (MP3, OGG, WAV, M4A). Até ${Math.floor(MAX_ITEM_FILE_BYTES / (1024 * 1024))} MB por arquivo e ${MAX_ITEMS_PER_PROJECT} itens por projeto. Os arquivos ficam só neste aparelho.`,
+              `Você pode guardar fotos (PNG, JPG, WebP), GIFs, vídeos (MP4, WebM), modelos 3D (GLB, sem compressão Draco) e sons (MP3, OGG, WAV, M4A). Até ${Math.floor(MAX_ITEM_FILE_BYTES / (1024 * 1024))} MB por arquivo e ${MAX_ITEMS_PER_PROJECT} lembranças por tatuagem. Os arquivos ficam só neste aparelho.`,
             ),
             h(
               'p',

@@ -150,11 +150,11 @@ afterEach(() => {
 });
 
 describe('abrir o editor', () => {
-  it('sem projeto escolhido, explica e leva a "Meus projetos"', async () => {
+  it('sem lembrança escolhida, explica e leva a "Minhas lembranças"', async () => {
     const repo = await freshRepository();
     const { root, navigations } = await mount(repo, null);
-    expect(root.textContent).toMatch(/Nenhum projeto escolhido/);
-    button(root, 'Meus projetos').click();
+    expect(root.textContent).toMatch(/Nenhuma lembrança escolhida/);
+    button(root, 'Minhas lembranças').click();
     expect(navigations).toEqual(['projects']);
   });
 
@@ -172,8 +172,8 @@ describe('abrir o editor', () => {
     const { project } = await newProject(repo);
     const { root } = await mount(repo, project.id);
     await ready(root);
-    expect(root.textContent).toMatch(/Adicione arquivos para começar/);
-    expect(root.textContent).toMatch(/0\/100 itens/);
+    expect(root.textContent).toMatch(/Adicione fotos, vídeos ou sons para começar/);
+    expect(root.textContent).toMatch(/0\/100 lembranças/);
     expect(root.textContent).toMatch(/GLB/);
     expect(root.querySelector('#youtube-note')?.textContent).toMatch(/YouTube.*player incorporado/);
     expect(stages).toHaveLength(1);
@@ -211,11 +211,12 @@ describe('layouts e apresentação', () => {
     const { root } = await mount(repo, project.id);
     await ready(root);
     const before = (await savedItems(repo, project.id))[0]!;
-    (root.querySelector('button[aria-label="Centralizar câmera no item selecionado"]') as HTMLButtonElement).click();
+    (root.querySelector('button[aria-label="Ver de perto a lembrança selecionada"]') as HTMLButtonElement).click();
     expect(stages.at(-1)?.focusItem).toHaveBeenCalledWith(before.id);
-    button(root, 'Galeria').click();
-    expect(root.textContent).toMatch(/Prévia: Galeria/);
-    button(root, 'Aplicar disposição').click();
+    expect(root.textContent).toContain('Reúna várias lembranças e veja tudo de uma vez.');
+    (root.querySelector('.layout-option') as HTMLButtonElement).click();
+    expect(root.textContent).toMatch(/Prévia: Mural/);
+    button(root, 'Usar esta disposição').click();
     expect(root.textContent).toMatch(/Alterações não salvas/);
     (root.querySelector('button[aria-label="Desfazer"]') as HTMLButtonElement).click();
     expect(root.textContent).not.toMatch(/Alterações não salvas/);
@@ -273,7 +274,7 @@ describe('adicionar arquivos', () => {
     });
     expect(root.querySelectorAll('.item-row')[1]?.getAttribute('aria-pressed')).toBe('true');
     expect(root.textContent).toMatch(/Modelo 3D · bicho.glb/);
-    expect(root.textContent).toMatch(/2\/100 itens/);
+    expect(root.textContent).toMatch(/2\/100 lembranças/);
   });
 
   it('formato não suportado aparece como erro e não impede os outros arquivos', async () => {
@@ -514,7 +515,7 @@ describe('ajustar e salvar', () => {
     await ready(root);
     stages[0]!.options.onSelect(null);
     expect(root.querySelector('.item-row')?.getAttribute('aria-pressed')).toBe('false');
-    expect(root.querySelector('.editor-panel')?.textContent).toMatch(/Toque num item/);
+    expect(root.querySelector('.editor-panel')?.textContent).toMatch(/Toque numa lembrança/);
     stages[0]!.options.onSelect((await savedItems(repo, project.id))[0]!.id);
     expect(root.querySelector('.item-row')?.getAttribute('aria-pressed')).toBe('true');
   });
@@ -600,7 +601,7 @@ describe('duplicar e remover', () => {
     const { project } = await newProject(repo, true);
     const { root } = await mount(repo, project.id);
     await ready(root);
-    button(root, 'Duplicar').click();
+    button(root, 'Fazer cópia').click();
     await vi.waitFor(async () => {
       if ((await savedItems(repo, project.id)).length !== 2) throw new Error('ainda não');
     });
@@ -632,7 +633,7 @@ describe('duplicar e remover', () => {
     await vi.waitFor(() => {
       if (root.querySelectorAll('.item-row').length !== 0) throw new Error('lista ainda não atualizou');
     });
-    expect(root.querySelector('.editor-panel')?.textContent).toMatch(/Adicione arquivos/);
+    expect(root.querySelector('.editor-panel')?.textContent).toMatch(/Adicione fotos, vídeos ou sons/);
   });
 });
 
@@ -692,13 +693,13 @@ describe('vistas da prévia', () => {
     expect(button(root, 'De frente').getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('"Reproduzir mídia" alterna o rótulo', async () => {
+  it('"Reproduzir prévia" alterna o rótulo', async () => {
     const repo = await freshRepository();
     const { project } = await newProject(repo, true);
     const { root } = await mount(repo, project.id);
     await ready(root);
-    button(root, 'Reproduzir mídia').click();
-    expect(button(root, 'Pausar mídia')).toBeDefined();
+    button(root, 'Reproduzir prévia').click();
+    expect(button(root, 'Pausar prévia')).toBeDefined();
   });
 });
 
@@ -735,7 +736,7 @@ describe('carrossel no editor', () => {
     await vi.waitFor(() => {
       if (box.hidden) throw new Error('sem pergunta');
     });
-    expect(box.textContent).toMatch(/3 imagens/);
+    expect(box.textContent).toMatch(/3 fotos/);
     expect(await savedItems(repo, project.id)).toHaveLength(0);
   });
 
@@ -745,7 +746,7 @@ describe('carrossel no editor', () => {
     const { root } = await mount(repo, project.id);
     await ready(root);
     await chooseFiles(root, pngs(3));
-    button(root, 'Carrossel automático').click();
+    button(root, 'Criar sequência automática').click();
     await waitForItems(repo, project.id, 1);
     const [item] = await savedItems(repo, project.id);
     expect(item?.type).toBe('carousel');
@@ -763,13 +764,13 @@ describe('carrossel no editor', () => {
     });
   });
 
-  it('"itens separados" cria um item por imagem', async () => {
+  it('"Guardar como lembranças" cria um item por foto', async () => {
     const repo = await freshRepository();
     const { project } = await newProject(repo);
     const { root } = await mount(repo, project.id);
     await ready(root);
     await chooseFiles(root, pngs(3));
-    button(root, '3 itens separados').click();
+    button(root, 'Guardar como 3 lembranças').click();
     await waitForItems(repo, project.id, 3);
     expect((await savedItems(repo, project.id)).map((i) => i.type)).toEqual(['image', 'image', 'image']);
   });
@@ -812,7 +813,7 @@ describe('carrossel no editor', () => {
     const { root } = await mount(repo, project.id);
     await ready(root);
     await chooseFiles(root, pngs(31));
-    button(root, 'Carrossel automático').click();
+    button(root, 'Criar sequência automática').click();
     await vi.waitFor(() => {
       if (!/no máximo 30 imagens/.test(root.textContent ?? '')) throw new Error('sem erro');
     });
@@ -882,7 +883,7 @@ describe('carrossel no editor', () => {
 
   it('"Adicionar imagens" acrescenta ao fim do carrossel', async () => {
     const { repo, project, root } = await withCarousel(2);
-    const input = root.querySelector('input[aria-label="Adicionar imagens ao carrossel"]') as HTMLInputElement;
+    const input = root.querySelector('input[aria-label="Adicionar fotos a esta sequência de lembranças"]') as HTMLInputElement;
     Object.defineProperty(input, 'files', { value: pngs(2, 10), configurable: true });
     input.dispatchEvent(new Event('change', { bubbles: true }));
     await vi.waitFor(async () => {
@@ -908,14 +909,14 @@ describe('carrossel no editor', () => {
     await ready(root);
     setSlider(slider(root, 'Tamanho'), 2);
     await chooseFiles(root, pngs(2, 20));
-    button(root, 'Carrossel automático').click();
+    button(root, 'Criar sequência automática').click();
     await waitForItems(repo, project.id, 2);
     expect((await savedItems(repo, project.id))[0]?.transform.scale).toBe(2);
   });
 
   it('duplicar copia o carrossel inteiro', async () => {
     const { repo, project, root } = await withCarousel(3);
-    button(root, 'Duplicar').click();
+    button(root, 'Fazer cópia').click();
     await waitForItems(repo, project.id, 2);
     const items = await savedItems(repo, project.id);
     expect(items[1]?.slides).toHaveLength(3);

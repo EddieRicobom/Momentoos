@@ -4,10 +4,10 @@ import { clampPositionToTarget } from './picking';
 export type SceneLayout = 'gallery' | 'semicircle' | 'free' | 'carousel';
 
 export const SCENE_LAYOUTS: ReadonlyArray<{ id: SceneLayout; label: string; description: string }> = [
-  { id: 'gallery', label: 'Galeria', description: 'Grade organizada para comparar vários conteúdos.' },
-  { id: 'semicircle', label: 'Semicírculo', description: 'Itens distribuídos em arco ao redor do centro.' },
-  { id: 'free', label: 'Composição livre', description: 'Organiza em linhas e preserva uma leitura simples.' },
-  { id: 'carousel', label: 'Carrossel', description: 'Itens distribuídos em círculo para uma apresentação.' },
+  { id: 'gallery', label: 'Mural', description: 'Reúna várias lembranças e veja tudo de uma vez.' },
+  { id: 'semicircle', label: 'Arco', description: 'Distribua as lembranças ao redor do centro.' },
+  { id: 'free', label: 'Composição livre', description: 'Uma disposição leve, com pequenas variações.' },
+  { id: 'carousel', label: 'Roda de lembranças', description: 'Reúna suas lembranças em círculo; a apresentação é iniciada separadamente.' },
 ];
 
 /** Reorganiza apenas as posições dos itens visuais; arquivos e opções permanecem intactos. */

@@ -50,11 +50,11 @@ export const cameraView: View = (context, root) => {
       h(
         'main',
         { class: 'screen' },
-        h('p', { class: 'muted' }, 'Nenhum alvo em memória. Crie uma âncora antes de abrir a câmera.'),
+        h('p', { class: 'muted' }, 'Nenhuma lembrança pronta para rever. Crie uma lembrança antes de abrir a câmera.'),
         h(
           'button',
           { class: 'btn btn-primary', type: 'button', onclick: () => context.navigate('create') },
-          'Criar âncora',
+          'Criar uma lembrança',
         ),
       ),
     );

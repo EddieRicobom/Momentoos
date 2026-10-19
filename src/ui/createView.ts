@@ -64,7 +64,7 @@ export const createView: View = (context, root) => {
     type: 'text',
     maxlength: String(NAME_MAX_LENGTH),
     autocomplete: 'off',
-    'aria-label': 'Nome do projeto',
+    'aria-label': 'Nome desta lembrança',
   });
   nameInput.value = defaultProjectName();
   const saveError = h('p', { class: 'form-error', role: 'alert' });
@@ -407,12 +407,12 @@ export const createView: View = (context, root) => {
         h(
           'p',
           { class: 'muted' },
-          'Salvo neste aparelho. Para reabrir sem recompilar, use "Meus projetos".',
+          'Salvo neste aparelho. Para rever depois, abra "Minhas lembranças".',
         ),
         h(
           'div',
           { class: 'row' },
-          h('button', { class: 'btn', type: 'button', onclick: () => context.navigate('projects') }, 'Ver meus projetos'),
+          h('button', { class: 'btn', type: 'button', onclick: () => context.navigate('projects') }, 'Ver minhas lembranças'),
         ),
       ];
     }
@@ -423,11 +423,11 @@ export const createView: View = (context, root) => {
     const saveButton = h(
       'button',
       { class: 'btn btn-primary', type: 'button', onclick: () => void saveProject(target, saveButton) },
-      'Salvar projeto',
+      'Guardar lembrança',
     );
     return [
       h('p', { class: 'muted' }, note),
-      h('label', { class: 'field-label' }, 'Nome do projeto', nameInput),
+      h('label', { class: 'field-label' }, 'Nome desta lembrança', nameInput),
       saveError,
       h('div', { class: 'row' }, saveButton),
     ];
@@ -457,7 +457,7 @@ export const createView: View = (context, root) => {
       if (context.getTarget() === target) {
         context.setTarget({ ...target, projectId: record.id, referenceImage: null });
       }
-      context.toast(`Projeto "${record.name}" salvo.`);
+      context.toast(`Lembrança "${record.name}" guardada.`);
     } catch (error) {
       if (!disposed) {
         saveError.textContent = describeError(error);
@@ -482,7 +482,7 @@ export const createView: View = (context, root) => {
     h(
       'main',
       { class: 'screen' },
-      topBar('Criar âncora', () => context.navigate('home')),
+      topBar('Criar uma lembrança', () => context.navigate('home')),
       h('div', { class: 'status-row' }, chip.element),
       h(
         'section',
