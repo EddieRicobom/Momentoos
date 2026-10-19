@@ -43,7 +43,7 @@ export const editorView: View = (context, root) => {
   let selectedId: string | null = null;
   let runtime: SceneRuntime | null = null;
   let stage: PreviewStage | null = null;
-  let view: PreviewView = 'front';
+  let view: PreviewView = 'tilted';
   let playing = false;
   let confirmingRemove = false;
   /** Várias imagens escolhidas de uma vez, esperando a decisão: carrossel ou itens separados. */
@@ -586,10 +586,10 @@ export const editorView: View = (context, root) => {
       const errors: string[] = [];
       for (const file of files) {
         try {
-          const index = draft.length % 6;
+          const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|avif)$/i.test(file.name);
           const result = await addItem(repo, projectId, {
             file: { data: await file.arrayBuffer(), fileName: file.name, mimeType: file.type },
-            transform: { position: [0.06 * index, -0.06 * index, 0] },
+            transform: { position: [0, 0, 0], ...(isImage ? { rotation: [90, 0, 0] as [number, number, number] } : {}) },
           });
           loadFromRecord(result.record);
           selectedId = result.item.id;
@@ -1260,6 +1260,12 @@ export const editorView: View = (context, root) => {
         const item = draft.find((candidate) => candidate.id === id);
         if (item && item.type !== 'audio') replaceDraft(applyControl(item, CONTROLS.find((c) => c.id === 'rot-z')!, degrees));
       },
+      onTransformRotate: (id, degrees) => {
+        const item = draft.find((candidate) => candidate.id === id);
+        if (item && item.type !== 'audio') {
+          replaceDraft({ ...item, transform: { ...item.transform, rotation: degrees } });
+        }
+      },
     });
     if (stage) stage.attach(runtime);
     else {
@@ -1284,7 +1290,7 @@ export const editorView: View = (context, root) => {
           'div',
           { class: 'editor-stagewrap' },
           stageBox,
-          h('p', { class: 'stage-hint' }, 'Toque ou clique para selecionar · Arraste para mover · Dois dedos giram e redimensionam'),
+          h('p', { class: 'stage-hint' }, 'Toque ou clique para selecionar · Arraste para mover · Gire pelos anéis ou com dois dedos · Pinça redimensiona'),
           stageNote,
           h('div', { class: 'stage-tools' }, h('div', { class: 'seg', role: 'group', 'aria-label': 'Ponto de vista da prévia' }, frontButton, tiltedButton), focusButton, playButton),
         ),
@@ -1331,7 +1337,7 @@ export const editorView: View = (context, root) => {
       ),
     );
 
-    setView('front');
+    setView('tilted');
     playButton.setAttribute('aria-pressed', 'false');
     selectedId = draft[0]?.id ?? null;
     loadMusicChoice();

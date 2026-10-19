@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GestureTracker } from '../scene/gestures';
 import { cameraPose, clampPositionToTarget, rayHitsPlane, type Point, type PreviewView } from '../scene/picking';
 import { snapAngle, snapPosition } from '../scene/snapping';
@@ -28,6 +29,8 @@ export interface PreviewStageOptions {
   /** Giro atual (Z, graus) do item, ou null se ele não puder girar. */
   getRotationZ(id: string): number | null;
   onRotate(id: string, degrees: number): void;
+  /** Atualiza o giro dos três eixos pelo controle visual. */
+  onTransformRotate(id: string, degrees: [number, number, number]): void;
   /** Tamanho (escala) atual do item, ou null se ele não puder ser redimensionado. */
   getScale(id: string): number | null;
   onScale(id: string, scale: number): void;
@@ -58,7 +61,22 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x14181c);
   const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 50);
-  let view: PreviewView = 'front';
+  const rotationGizmo = new TransformControls(camera, renderer.domElement);
+  rotationGizmo.setMode('rotate');
+  rotationGizmo.setSpace('local');
+  rotationGizmo.size = 0.78;
+  scene.add(rotationGizmo);
+  let gizmoItemId: string | null = null;
+  rotationGizmo.addEventListener('objectChange', () => {
+    const object = rotationGizmo.object;
+    if (!object || !gizmoItemId) return;
+    options.onTransformRotate(gizmoItemId, [
+      THREE.MathUtils.radToDeg(object.rotation.x),
+      THREE.MathUtils.radToDeg(object.rotation.y),
+      THREE.MathUtils.radToDeg(object.rotation.z),
+    ]);
+  });
+  let view: PreviewView = 'tilted';
   let runtime: SceneRuntime | null = null;
   let disposed = false;
   const cameraTarget = new THREE.Vector3();
@@ -236,6 +254,7 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
 
   const onDown = (event: PointerEvent): void => {
     if (!runtime) return;
+    if (rotationGizmo.dragging || rotationGizmo.axis !== null) return;
     try {
       canvas.setPointerCapture(event.pointerId);
     } catch {
@@ -243,8 +262,12 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
     }
     gestures.down(event.pointerId, toPoint(event));
   };
-  const onMove = (event: PointerEvent): void => gestures.move(event.pointerId, toPoint(event));
-  const onUp = (event: PointerEvent): void => gestures.up(event.pointerId, event.type === 'pointercancel');
+  const onMove = (event: PointerEvent): void => {
+    if (!rotationGizmo.dragging) gestures.move(event.pointerId, toPoint(event));
+  };
+  const onUp = (event: PointerEvent): void => {
+    if (!rotationGizmo.dragging) gestures.up(event.pointerId, event.type === 'pointercancel');
+  };
 
   const canvas = renderer.domElement;
   canvas.addEventListener('pointerdown', onDown);
@@ -268,6 +291,11 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
 
     const selected = options.getSelectedId();
     const root = selected && runtime ? runtime.rootOf(selected) : null;
+    if (selected !== gizmoItemId) {
+      gizmoItemId = selected;
+      if (root) rotationGizmo.attach(root);
+      else rotationGizmo.detach();
+    }
     if (root) {
       root.updateMatrixWorld(true);
       selectionBox.setFromObject(root);
@@ -297,6 +325,8 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerup', onUp);
       canvas.removeEventListener('pointercancel', onUp);
+      scene.remove(rotationGizmo);
+      rotationGizmo.dispose();
       if (runtime) scene.remove(runtime.group);
       backdropMaterial.map?.dispose();
       backdropMaterial.dispose();

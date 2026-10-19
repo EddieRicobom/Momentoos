@@ -1009,7 +1009,7 @@ input[type='range']:disabled {
 
 .editor-screen {
   height: 100dvh;
-  max-width: 640px;
+  max-width: 960px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -1598,7 +1598,38 @@ input[type='range']:disabled {
 
 @media (min-width: 720px) {
   .editor-stagewrap {
-    height: clamp(300px, 52dvh, 520px);
+    height: clamp(360px, 56dvh, 680px);
+  }
+}
+
+@media (min-width: 960px) {
+  .editor-screen {
+    width: min(100%, 1440px);
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: 16px;
+    padding-inline: 16px;
+  }
+
+  .editor-head {
+    grid-column: 1 / -1;
+  }
+
+  .editor-stagewrap {
+    grid-column: 1;
+    grid-row: 2;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    margin: 0 0 0 12px;
+  }
+
+  .editor-sheet {
+    grid-column: 2;
+    grid-row: 2;
+    padding: 0 0 calc(24px + var(--safe-bottom));
   }
 }
 

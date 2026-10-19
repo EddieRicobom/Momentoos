@@ -43,7 +43,8 @@ export interface CameraPose {
 export function cameraPose(view: PreviewView, targetAspect: number, viewAspect: number, fov = 40): CameraPose {
   const safeTarget = Number.isFinite(targetAspect) && targetAspect > 0 ? targetAspect : 1;
   const safeView = Number.isFinite(viewAspect) && viewAspect > 0 ? viewAspect : 1;
-  const margin = 1.22;
+  // Deixa uma folga maior ao redor do alvo para a prévia não parecer colada.
+  const margin = 1.4;
   const halfHeight = Math.tan((fov * Math.PI) / 360);
   const neededForHeight = (safeTarget * margin) / 2 / halfHeight;
   const neededForWidth = (1 * margin) / 2 / (halfHeight * safeView);

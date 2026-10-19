@@ -269,6 +269,10 @@ describe('adicionar arquivos', () => {
     });
     const items = await savedItems(repo, project.id);
     expect(items.map((i) => i.type)).toEqual(['image', 'model']);
+    expect(items[0]!.transform.position).toEqual([0, 0, 0]);
+    expect(items[0]!.transform.rotation).toEqual([90, 0, 0]);
+    expect(items[1]!.transform.position).toEqual([0, 0, 0]);
+    expect(items[1]!.transform.rotation).toEqual([0, 0, 0]);
     await vi.waitFor(() => {
       if (root.querySelectorAll('.item-row').length !== 2) throw new Error('lista ainda não atualizou');
     });
@@ -686,7 +690,7 @@ describe('vistas da prévia', () => {
     const { project } = await newProject(repo, true);
     const { root } = await mount(repo, project.id);
     await ready(root);
-    expect(button(root, 'De frente').getAttribute('aria-pressed')).toBe('true');
+    expect(button(root, 'Inclinada').getAttribute('aria-pressed')).toBe('true');
     button(root, 'Inclinada').click();
     expect(stages[0]!.setView).toHaveBeenLastCalledWith('tilted');
     expect(button(root, 'Inclinada').getAttribute('aria-pressed')).toBe('true');
