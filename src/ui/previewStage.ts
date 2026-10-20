@@ -29,16 +29,22 @@ export interface PreviewStageOptions {
   /** Giro atual (Z, graus) do item, ou null se ele não puder girar. */
   getRotationZ(id: string): number | null;
   onRotate(id: string, degrees: number): void;
-  /** Atualiza o giro dos três eixos pelo controle visual. */
+  onTransformPosition(id: string, position: [number, number, number]): void;
   onTransformRotate(id: string, degrees: [number, number, number]): void;
+  onTransformScale(id: string, scale: number): void;
+  onManipulationStart(): void;
+  onManipulationEnd(): void;
   /** Tamanho (escala) atual do item, ou null se ele não puder ser redimensionado. */
   getScale(id: string): number | null;
   onScale(id: string, scale: number): void;
 }
 
+export type PreviewTool = 'select' | 'move' | 'rotate' | 'scale';
+
 export interface PreviewStage {
   attach(runtime: SceneRuntime): void;
   setView(view: PreviewView): void;
+  setTool(tool: PreviewTool): void;
   focusItem(id: string | null): void;
   dispose(): void;
 }
@@ -61,20 +67,53 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x14181c);
   const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 50);
-  const rotationGizmo = new TransformControls(camera, renderer.domElement);
-  rotationGizmo.setMode('rotate');
-  rotationGizmo.setSpace('local');
-  rotationGizmo.size = 0.78;
-  scene.add(rotationGizmo);
+  const transformControls = new TransformControls(camera, renderer.domElement);
+  transformControls.setMode('rotate');
+  transformControls.setSpace('local');
+  transformControls.size = 0.78;
+  scene.add(transformControls);
   let gizmoItemId: string | null = null;
-  rotationGizmo.addEventListener('objectChange', () => {
-    const object = rotationGizmo.object;
+  let activeTool: PreviewTool = 'select';
+  let scaleAtStart = 1;
+  transformControls.addEventListener('mouseDown', () => {
+    if (activeTool === 'scale' && transformControls.object) scaleAtStart = transformControls.object.scale.x;
+    options.onManipulationStart();
+  });
+  transformControls.addEventListener('mouseUp', () => options.onManipulationEnd());
+  transformControls.addEventListener('objectChange', () => {
+    const object = transformControls.object;
     if (!object || !gizmoItemId) return;
-    options.onTransformRotate(gizmoItemId, [
-      THREE.MathUtils.radToDeg(object.rotation.x),
-      THREE.MathUtils.radToDeg(object.rotation.y),
-      THREE.MathUtils.radToDeg(object.rotation.z),
-    ]);
+    if (activeTool === 'move') {
+      const root = runtime?.rootOf(gizmoItemId);
+      if (!root) return;
+      root.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(root);
+      const size = bounds.getSize(new THREE.Vector3());
+      const center = bounds.getCenter(new THREE.Vector3());
+      const offsetX = center.x - root.position.x;
+      const offsetY = center.y - root.position.y;
+      const snapped = snapPosition(root.position.x + offsetX, root.position.y + offsetY, targetAspect, undefined, options.getGridSnap());
+      const [x, y] = clampPositionToTarget(snapped.x, snapped.y, size.x / 2, size.y / 2, targetAspect);
+      root.position.x = x - offsetX;
+      root.position.y = y - offsetY;
+      options.onTransformPosition(gizmoItemId, [root.position.x, root.position.y, root.position.z]);
+      return;
+    }
+    if (activeTool === 'rotate') {
+      options.onTransformRotate(gizmoItemId, [
+        THREE.MathUtils.radToDeg(object.rotation.x),
+        THREE.MathUtils.radToDeg(object.rotation.y),
+        THREE.MathUtils.radToDeg(object.rotation.z),
+      ]);
+      return;
+    }
+    if (activeTool === 'scale') {
+      const axis = transformControls.axis;
+      const ratio = axis === 'X' ? object.scale.x / scaleAtStart : axis === 'Y' ? object.scale.y / scaleAtStart : axis === 'Z' ? object.scale.z / scaleAtStart : (object.scale.x + object.scale.y + object.scale.z) / (3 * scaleAtStart);
+      const next = THREE.MathUtils.clamp(scaleAtStart * ratio, 0.05, 5);
+      object.scale.setScalar(next);
+      options.onTransformScale(gizmoItemId, next);
+    }
   });
   let view: PreviewView = 'tilted';
   let runtime: SceneRuntime | null = null;
@@ -163,17 +202,27 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
   const focusItem = (id: string | null): void => {
     const root = id ? runtime?.rootOf(id) : null;
     const target = new THREE.Vector3();
+    let desiredDistance: number | null = null;
     if (root) {
       root.updateMatrixWorld(true);
       const bounds = new THREE.Box3().setFromObject(root);
-      if (!bounds.isEmpty()) bounds.getCenter(target);
+      if (!bounds.isEmpty()) {
+        bounds.getCenter(target);
+        const size = bounds.getSize(new THREE.Vector3());
+        const fitHeight = Math.max(size.y, size.x / Math.max(camera.aspect, 0.1)) * 1.9 / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+        desiredDistance = THREE.MathUtils.clamp(fitHeight, 0.7, 8);
+      }
       else target.copy(root.position);
     }
     const fromPosition = camera.position.clone();
     const fromTarget = cameraTarget.clone();
     const toTarget = target;
-    const offset = fromPosition.clone().sub(fromTarget);
-    const toPosition = toTarget.clone().add(offset);
+    let direction = fromPosition.clone().sub(fromTarget);
+    if (direction.lengthSq() < 1e-6) direction.set(0, -0.7, 0.7);
+    direction.normalize();
+    const toPosition = id && desiredDistance !== null
+      ? toTarget.clone().addScaledVector(direction, desiredDistance)
+      : toTarget.clone().add(new THREE.Vector3(...cameraPose(view, targetAspect, camera.aspect, camera.fov).position));
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     cameraMotion = { fromPosition, toPosition, fromTarget, toTarget, elapsed: 0, duration: reduced ? 0 : 0.55 };
     if (reduced) {
@@ -213,6 +262,7 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       return hit ? runtime.itemIdOf(hit.object) : null;
     },
     select: options.onSelect,
+    begin: options.onManipulationStart,
     startDrag(id, point) {
       const root = runtime?.rootOf(id);
       if (!root) return null;
@@ -247,14 +297,17 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
     },
     scaleOf: options.getScale,
     rescale: options.onScale,
-    end: hideGuides,
+    end() {
+      hideGuides();
+      options.onManipulationEnd();
+    },
   });
 
   const toPoint = (event: PointerEvent): Point => ({ x: event.clientX, y: event.clientY });
 
   const onDown = (event: PointerEvent): void => {
     if (!runtime) return;
-    if (rotationGizmo.dragging || rotationGizmo.axis !== null) return;
+    if (activeTool !== 'select' || transformControls.dragging || transformControls.axis !== null) return;
     try {
       canvas.setPointerCapture(event.pointerId);
     } catch {
@@ -263,10 +316,10 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
     gestures.down(event.pointerId, toPoint(event));
   };
   const onMove = (event: PointerEvent): void => {
-    if (!rotationGizmo.dragging) gestures.move(event.pointerId, toPoint(event));
+    if (activeTool === 'select' && !transformControls.dragging) gestures.move(event.pointerId, toPoint(event));
   };
   const onUp = (event: PointerEvent): void => {
-    if (!rotationGizmo.dragging) gestures.up(event.pointerId, event.type === 'pointercancel');
+    if (activeTool === 'select' && !transformControls.dragging) gestures.up(event.pointerId, event.type === 'pointercancel');
   };
 
   const canvas = renderer.domElement;
@@ -291,10 +344,16 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
 
     const selected = options.getSelectedId();
     const root = selected && runtime ? runtime.rootOf(selected) : null;
-    if (selected !== gizmoItemId) {
-      gizmoItemId = selected;
-      if (root) rotationGizmo.attach(root);
-      else rotationGizmo.detach();
+    const transformNode = !selected || !runtime ? null : activeTool === 'move' ? root : activeTool === 'rotate' ? runtime.rotationOf(selected) : activeTool === 'scale' ? runtime.scaleNodeOf(selected) : null;
+    gizmoItemId = selected;
+    if (transformNode !== transformControls.object) {
+      if (transformNode) transformControls.attach(transformNode);
+      else transformControls.detach();
+    }
+    if (activeTool !== 'select') {
+      const mode = activeTool === 'move' ? 'translate' : activeTool === 'rotate' ? 'rotate' : 'scale';
+      if (transformControls.getMode() !== mode) transformControls.setMode(mode);
+      transformControls.visible = transformNode !== null;
     }
     if (root) {
       root.updateMatrixWorld(true);
@@ -316,6 +375,11 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       view = next;
       applyCamera();
     },
+    setTool(next) {
+      activeTool = next;
+      if (activeTool === 'select') transformControls.detach();
+      else transformControls.setMode(activeTool === 'move' ? 'translate' : activeTool === 'rotate' ? 'rotate' : 'scale');
+    },
     focusItem,
     dispose() {
       disposed = true;
@@ -325,8 +389,8 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerup', onUp);
       canvas.removeEventListener('pointercancel', onUp);
-      scene.remove(rotationGizmo);
-      rotationGizmo.dispose();
+      scene.remove(transformControls);
+      transformControls.dispose();
       if (runtime) scene.remove(runtime.group);
       backdropMaterial.map?.dispose();
       backdropMaterial.dispose();

@@ -24,15 +24,17 @@ export interface GestureHost {
   /** Tamanho atual (escala) do item, ou null se ele não puder ser redimensionado. */
   scaleOf(id: string): number | null;
   rescale(id: string, scale: number): void;
+  /** Abre um único passo de histórico antes da primeira alteração do gesto. */
+  begin?(): void;
   /** Um gesto de arrasto ou de dois dedos terminou (para esconder guias, por exemplo). */
   end?(): void;
 }
 
-const TAP_SLOP_PX = 8;
+const TAP_SLOP_PX = 7;
 
 export class GestureTracker {
   private readonly pointers = new Map<number, Point>();
-  private drag: { pointerId: number; move(point: Point): void } | null = null;
+  private drag: { pointerId: number; origin: Point; move(point: Point): void; active: boolean } | null = null;
   private twist: {
     id: string;
     startAngle: number;
@@ -41,6 +43,7 @@ export class GestureTracker {
     startScale: number | null;
   } | null = null;
   private emptyTap: { pointerId: number; origin: Point } | null = null;
+  private operationActive = false;
 
   constructor(private readonly host: GestureHost) {}
 
@@ -61,7 +64,7 @@ export class GestureTracker {
     }
     this.host.select(id);
     const move = this.host.startDrag(id, point);
-    if (move) this.drag = { pointerId, move };
+    if (move) this.drag = { pointerId, origin: point, move, active: false };
   }
 
   move(pointerId: number, point: Point): void {
@@ -76,13 +79,26 @@ export class GestureTracker {
       const pair = this.pair();
       if (pair && pointerDistance(...pair) >= MIN_TWIST_DISTANCE) {
         const { id, startAngle, startRotation, startDistance, startScale } = this.twist;
-        if (startRotation !== null) this.host.rotate(id, twistedRotation(startRotation, startAngle, pointerAngleDeg(...pair)));
-        if (startScale !== null) this.host.rescale(id, pinchedScale(startScale, startDistance, pointerDistance(...pair)));
+        const angle = pointerAngleDeg(...pair);
+        const distance = pointerDistance(...pair);
+        if (!this.operationActive && (Math.abs(twistedRotation(startRotation ?? 0, startAngle, angle) - (startRotation ?? 0)) > 0.25 || Math.abs(distance - startDistance) > 0.5)) {
+          this.host.begin?.();
+          this.operationActive = true;
+        }
+        if (startRotation !== null) this.host.rotate(id, twistedRotation(startRotation, startAngle, angle));
+        if (startScale !== null) this.host.rescale(id, pinchedScale(startScale, startDistance, distance));
       }
       return;
     }
 
-    if (this.drag?.pointerId === pointerId) this.drag.move(point);
+    if (this.drag?.pointerId === pointerId && pointerDistance(this.drag.origin, point) > TAP_SLOP_PX) {
+      if (!this.drag.active) {
+        this.host.begin?.();
+        this.drag.active = true;
+        this.operationActive = true;
+      }
+      this.drag.move(point);
+    }
   }
 
   /** `cancelled` = pointercancel (o sistema tomou o gesto): nunca conta como toque. */
@@ -92,10 +108,13 @@ export class GestureTracker {
       this.emptyTap = null;
     }
     this.pointers.delete(pointerId);
-    const hadGesture = this.drag?.pointerId === pointerId || (this.twist !== null && this.pointers.size < 2);
+    const hadGesture = (this.drag?.pointerId === pointerId && this.drag.active) || (this.twist !== null && this.pointers.size < 2);
     if (this.drag?.pointerId === pointerId) this.drag = null;
     if (this.pointers.size < 2) this.twist = null;
-    if (hadGesture) this.host.end?.();
+    if (hadGesture) {
+      this.host.end?.();
+      this.operationActive = false;
+    }
   }
 
   private pair(): [Point, Point] | null {

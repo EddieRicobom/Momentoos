@@ -271,6 +271,18 @@ export class SceneRuntime {
     return entry?.state === 'ready' ? (entry.nodes?.root ?? null) : null;
   }
 
+  /** Nó de giro do item; mantém o gizmo na mesma parte da hierarquia que o estado salvo. */
+  rotationOf(id: string): THREE.Object3D | null {
+    const entry = this.entries.get(id);
+    return entry?.state === 'ready' ? (entry.nodes?.rotation ?? null) : null;
+  }
+
+  /** Nó de escala uniforme do item, separado da posição e do giro. */
+  scaleNodeOf(id: string): THREE.Object3D | null {
+    const entry = this.entries.get(id);
+    return entry?.state === 'ready' ? (entry.nodes?.scale ?? null) : null;
+  }
+
   /** Id do item a que um objeto da cena pertence (sobe pelos pais), ou null. */
   itemIdOf(object: THREE.Object3D | null): string | null {
     for (let node: THREE.Object3D | null = object; node; node = node.parent) {

@@ -1,4 +1,4 @@
-import { CONTROLS, applyControl, cloneItems, controlsFor, diffItems, formatValue, isDirty, moveItem, nudgeStep, resetTransform, TYPE_LABEL, type Control } from '../scene/editorModel';
+import { CONTROLS, applyControl, cloneItems, controlsFor, diffItems, isDirty, moveItem, nudgeStep, resetTransform, TYPE_LABEL, type Control } from '../scene/editorModel';
 import { browserLoaders } from '../scene/loaders';
 import type { PreviewView } from '../scene/picking';
 import { SceneRuntime, type RuntimeSummary } from '../scene/runtime';
@@ -18,7 +18,7 @@ import { topBar } from './components';
 import { icon } from './icons';
 import type { View } from './context';
 import { describeError, formatBytes, h } from './dom';
-import { createPreviewStage, type PreviewStage } from './previewStage';
+import { createPreviewStage, type PreviewStage, type PreviewTool } from './previewStage';
 
 const ACCEPT = '.png,.jpg,.jpeg,.webp,.gif,.mp4,.m4v,.webm,.glb,.mp3,.ogg,.oga,.wav,.m4a';
 
@@ -51,11 +51,12 @@ export const editorView: View = (context, root) => {
   let pendingFiles: File[] | null = null;
   let pendingPreviewUrls: string[] = [];
   let summary: RuntimeSummary | null = null;
-  const refs = new Map<string, { input: HTMLInputElement; output: HTMLElement; control: Control }>();
+  const refs = new Map<string, { input: HTMLInputElement; numeric: HTMLInputElement; output: HTMLElement; control: Control }>();
   /** Histórico de desfazer/refazer (só ajustes; adicionar/remover itens zera o histórico). */
   let undoStack: SceneItem[][] = [];
   let redoStack: SceneItem[][] = [];
   let lastRememberedAt = 0;
+  let transactionOriginal: SceneItem[] | null = null;
   /** Setas e botões +/−: passo pequeno. */
   let fine = false;
   let gridSnap = false;
@@ -73,6 +74,7 @@ export const editorView: View = (context, root) => {
   const presentationItems = (): SceneItem[] => draft.filter((item) => item.visible && item.type !== 'audio');
 
   const stageBox = h('div', { class: 'editor-stage' });
+  const toolHint = h('span', { class: 'tool-hint', role: 'status' }, 'Arraste para mover; use dois dedos para girar e redimensionar.');
   const stageNote = h('p', { class: 'muted stage-note', role: 'status' });
   stageNote.hidden = true;
   const undoButton = h('button', { class: 'btn btn-icon', type: 'button', 'aria-label': 'Desfazer', title: 'Desfazer', onclick: () => stepHistory(-1) }, icon('undo'));
@@ -89,11 +91,27 @@ export const editorView: View = (context, root) => {
   const counter = h('span', { class: 'muted' });
   const frontButton = h('button', { class: 'btn', type: 'button', onclick: () => setView('front') }, 'De frente');
   const tiltedButton = h('button', { class: 'btn', type: 'button', onclick: () => setView('tilted') }, 'Inclinada');
+  const toolButtons = (['select', 'move', 'rotate', 'scale'] as const).map((tool) => h('button', {
+    class: 'btn tool-button',
+    type: 'button',
+    'data-tool': tool,
+    'aria-pressed': String(tool === 'select'),
+    title: tool === 'select' ? 'Selecionar e ajustar com gestos' : tool === 'move' ? 'Mover pelos eixos X, Y e Z' : tool === 'rotate' ? 'Girar pelos anéis X, Y e Z' : 'Redimensionar mantendo proporção',
+    onclick: () => setTool(tool),
+  }, tool === 'select' ? 'Selecionar' : tool === 'move' ? 'Mover' : tool === 'rotate' ? 'Girar' : 'Tamanho'));
   const playButton = h('button', { class: 'btn btn-play', type: 'button', onclick: () => void togglePlay() }, 'Reproduzir prévia');
   const focusButton = h('button', { class: 'btn focus-camera', type: 'button', 'aria-label': 'Ver de perto a lembrança selecionada', title: 'Ver de perto', onclick: () => stage?.focusItem(selectedId) }, icon('center'), h('span', { class: 'focus-label' }, 'Ver de perto'));
   const layoutBox = h('section', { class: 'card layout-box', 'aria-label': 'Formas de reunir lembranças' });
   const presentationBox = h('section', { class: 'card presentation-box', 'aria-label': 'Rever lembranças' });
   const musicBox = h('section', { class: 'card music-box', 'aria-label': 'Trilha para rever lembranças' });
+  const projectSettings = h(
+    'details',
+    { class: 'project-settings' },
+    h('summary', {}, 'Layouts, apresentação e música'),
+    layoutBox,
+    presentationBox,
+    musicBox,
+  );
   const choiceBox = h('div', { class: 'choice-box', role: 'group', 'aria-label': 'Como adicionar as imagens' });
   choiceBox.hidden = true;
   const addConfirmBox = h('div', { class: 'add-confirm-box', role: 'group', 'aria-label': 'Confirmar adição de arquivos' });
@@ -153,6 +171,7 @@ export const editorView: View = (context, root) => {
    * é guardado depois de uma pausa.
    */
   function remember(): void {
+    if (transactionOriginal) return;
     const now = Date.now();
     if (undoStack.length === 0 || now - lastRememberedAt > 700) {
       undoStack.push(cloneItems(draft));
@@ -163,10 +182,30 @@ export const editorView: View = (context, root) => {
     redrawHistory();
   }
 
+  function beginEdit(): void {
+    if (transactionOriginal) return;
+    stopPresentation();
+    transactionOriginal = cloneItems(draft);
+  }
+
+  function finishEdit(): void {
+    if (!transactionOriginal) return;
+    const before = transactionOriginal;
+    transactionOriginal = null;
+    if (!isDirty(before, draft)) return;
+    undoStack.push(before);
+    if (undoStack.length > 80) undoStack.shift();
+    redoStack = [];
+    lastRememberedAt = Date.now();
+    redrawHistory();
+    redrawSaveBar();
+  }
+
   function resetHistory(): void {
     undoStack = [];
     redoStack = [];
     lastRememberedAt = 0;
+    transactionOriginal = null;
     redrawHistory();
   }
 
@@ -177,6 +216,7 @@ export const editorView: View = (context, root) => {
 
   /** Volta (-1) ou refaz (+1). Só mexe em itens que ainda existem. */
   function stepHistory(direction: -1 | 1): void {
+    finishEdit();
     stopPresentation();
     const from = direction === -1 ? undoStack : redoStack;
     const to = direction === -1 ? redoStack : undoStack;
@@ -228,6 +268,13 @@ export const editorView: View = (context, root) => {
     tiltedButton.setAttribute('aria-pressed', String(next === 'tilted'));
   }
 
+  function setTool(next: PreviewTool): void {
+    stopPresentation();
+    stage?.setTool(next);
+    for (const button of toolButtons) button.setAttribute('aria-pressed', String(button.dataset.tool === next));
+    toolHint.textContent = next === 'select' ? 'Arraste o objeto para mover; use dois dedos para girar e redimensionar.' : next === 'move' ? 'Arraste uma seta para mover no eixo indicado.' : next === 'rotate' ? 'Arraste um anel para girar em torno do eixo indicado.' : 'Arraste uma alça para redimensionar sem deformar.';
+  }
+
   async function togglePlay(): Promise<void> {
     playing = !playing;
     playButton.setAttribute('aria-pressed', String(playing));
@@ -246,7 +293,10 @@ export const editorView: View = (context, root) => {
     }
     if (wasActive) localMusicPlaying = false;
     presentationBox.dataset.playing = 'false';
-    redrawPresentation();
+    if (wasActive) {
+      redrawPresentation();
+      redrawMusicBox();
+    }
   }
 
   function presentationStep(direction: 1 | -1): void {
@@ -713,11 +763,12 @@ export const editorView: View = (context, root) => {
 
   function syncControls(item: SceneItem): void {
     if (item.id !== selectedId) return;
-    for (const { input, output, control } of refs.values()) {
+    for (const { input, numeric, output, control } of refs.values()) {
       const value = control.read(item);
       input.value = String(value);
       input.style.setProperty('--fill', percentOf(control, value));
-      output.textContent = formatValue(control, value);
+      numeric.value = String(value).replace('.', ',');
+      output.textContent = control.unit;
     }
   }
 
@@ -756,7 +807,7 @@ export const editorView: View = (context, root) => {
 
   function sliderRow(item: SceneItem, control: Control): HTMLElement {
     const value = control.read(item);
-    const output = h('output', { class: 'slider-value' }, formatValue(control, value));
+    const output = h('output', { class: 'slider-unit' }, control.unit);
     const input = h('input', {
       type: 'range',
       min: control.min,
@@ -765,20 +816,57 @@ export const editorView: View = (context, root) => {
       value,
       'aria-label': control.label,
     });
+    const numeric = h('input', {
+      type: 'text',
+      inputmode: 'decimal',
+      class: 'number-input',
+      value: String(value).replace('.', ','),
+      'aria-label': `${control.label} valor`,
+    });
     input.style.setProperty('--fill', percentOf(control, value));
+    input.addEventListener('focus', beginEdit);
+    input.addEventListener('pointerdown', beginEdit);
     input.addEventListener('input', () => {
-      stopPresentation();
+      // Sliders via teclado geram `input` sem pointerdown; agrupe-os por pausa.
+      // No arraste, beginEdit já abriu um único passo antes da primeira mudança.
+      if (!transactionOriginal) remember();
       const current = selected();
       if (!current) return;
-      remember();
       const next = applyControl(current, control, Number(input.value));
-      output.textContent = formatValue(control, control.read(next));
       input.style.setProperty('--fill', percentOf(control, control.read(next)));
+      numeric.value = String(control.read(next)).replace('.', ',');
       draft = draft.map((candidate) => (candidate.id === next.id ? next : candidate));
       runtime?.updateItem(next);
       redrawSaveBar();
     });
-    refs.set(control.id, { input, output, control });
+    input.addEventListener('pointerup', finishEdit);
+    input.addEventListener('pointercancel', finishEdit);
+    input.addEventListener('change', finishEdit);
+    numeric.addEventListener('focus', beginEdit);
+    numeric.addEventListener('change', () => {
+      const current = selected();
+      if (!current) return;
+      const parsed = Number(numeric.value.trim().replace(',', '.'));
+      if (!Number.isFinite(parsed)) {
+        syncControls(current);
+        finishEdit();
+        return;
+      }
+      beginEdit();
+      replaceDraft(applyControl(current, control, parsed));
+      finishEdit();
+    });
+    numeric.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') numeric.blur();
+      if (event.key === 'Escape') {
+        const current = selected();
+        if (current) syncControls(current);
+        finishEdit();
+        numeric.blur();
+      }
+    });
+    numeric.addEventListener('blur', finishEdit);
+    refs.set(control.id, { input, numeric, output, control });
     const stepper = (sign: '−' | '+', direction: 1 | -1): HTMLButtonElement =>
       repeating(
         h('button', { class: 'btn step', type: 'button', 'aria-label': `${direction === 1 ? 'Aumentar' : 'Diminuir'} ${control.label}` }, sign),
@@ -788,7 +876,7 @@ export const editorView: View = (context, root) => {
       'div',
       { class: 'slider' },
       h('span', { class: 'slider-label' }, control.label),
-      output,
+      h('div', { class: 'slider-value' }, numeric, output),
       h('div', { class: 'slider-track' }, stepper('−', -1), input, stepper('+', 1)),
     );
   }
@@ -1146,6 +1234,7 @@ export const editorView: View = (context, root) => {
     redrawPendingFiles();
     redrawPresentation();
     for (const button of [frontButton, tiltedButton, focusButton, playButton]) button.disabled = busy;
+    for (const button of toolButtons) button.disabled = busy || selected() === null;
     redrawHistory();
   }
 
@@ -1157,6 +1246,7 @@ export const editorView: View = (context, root) => {
     if (!presentationInternalSelect) stopPresentation();
     selectedId = id;
     confirmingRemove = false;
+    for (const button of toolButtons) button.disabled = busy || id === null;
     redrawList();
     drawPanel();
   }
@@ -1263,15 +1353,36 @@ export const editorView: View = (context, root) => {
       onTransformRotate: (id, degrees) => {
         const item = draft.find((candidate) => candidate.id === id);
         if (item && item.type !== 'audio') {
-          replaceDraft({ ...item, transform: { ...item.transform, rotation: degrees } });
+          let next = item;
+          for (const [axis, value] of ['rot-x', 'rot-y', 'rot-z'].map((key, index) => [key, degrees[index]!] as const)) {
+            next = applyControl(next, CONTROLS.find((control) => control.id === axis)!, value);
+          }
+          replaceDraft(next);
         }
       },
+      onTransformPosition: (id, position) => {
+        const item = draft.find((candidate) => candidate.id === id);
+        if (item && item.type !== 'audio') {
+          let next = item;
+          for (const [axis, value] of ['pos-x', 'pos-y', 'pos-z'].map((key, index) => [key, position[index]!] as const)) {
+            next = applyControl(next, CONTROLS.find((control) => control.id === axis)!, value);
+          }
+          replaceDraft(next);
+        }
+      },
+      onTransformScale: (id, scale) => {
+        const item = draft.find((candidate) => candidate.id === id);
+        if (item && item.type !== 'audio') replaceDraft(applyControl(item, CONTROLS.find((control) => control.id === 'scale')!, scale));
+      },
+      onManipulationStart: beginEdit,
+      onManipulationEnd: finishEdit,
     });
     if (stage) stage.attach(runtime);
     else {
       stageNote.hidden = false;
       stageNote.textContent = 'A prévia 3D não está disponível neste navegador (WebGL). Use os controles abaixo; o resultado aparece na câmera.';
     }
+    setTool('select');
     void runtime.load();
 
     root.replaceChildren(
@@ -1290,7 +1401,8 @@ export const editorView: View = (context, root) => {
           'div',
           { class: 'editor-stagewrap' },
           stageBox,
-          h('p', { class: 'stage-hint' }, 'Toque ou clique para selecionar · Arraste para mover · Gire pelos anéis ou com dois dedos · Pinça redimensiona'),
+          h('div', { class: 'transform-toolbar', role: 'group', 'aria-label': 'Ferramentas de edição' }, ...toolButtons),
+          toolHint,
           stageNote,
           h('div', { class: 'stage-tools' }, h('div', { class: 'seg', role: 'group', 'aria-label': 'Ponto de vista da prévia' }, frontButton, tiltedButton), focusButton, playButton),
         ),
@@ -1304,14 +1416,12 @@ export const editorView: View = (context, root) => {
             list,
             addConfirmBox,
             choiceBox,
-            layoutBox,
-            presentationBox,
-            musicBox,
             message,
             statusLine,
             problems,
           ),
           panel,
+          projectSettings,
           h(
             'details',
             { class: 'fine-tune help-box' },

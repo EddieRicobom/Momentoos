@@ -421,6 +421,18 @@ describe('SceneRuntime: edição de itens (add / remove / seleção)', () => {
     expect(runtime.clipsOf('m')).toEqual(['Andar', 'Correr']);
     expect(runtime.clipsOf('bad')).toEqual([]);
   });
+
+  it('expõe os nós de rotação e escala do item pronto para anexar as ferramentas 3D', async () => {
+    const { runtime } = setup([makeItem('a')]);
+    await runtime.load();
+    const root = runtime.rootOf('a')!;
+    const rotation = runtime.rotationOf('a')!;
+    const scale = runtime.scaleNodeOf('a')!;
+    expect(rotation.parent).toBe(root);
+    expect(scale.parent?.parent).toBe(rotation);
+    expect(runtime.rotationOf('desconhecido')).toBeNull();
+    expect(runtime.scaleNodeOf('desconhecido')).toBeNull();
+  });
 });
 
 describe('SceneRuntime: carrossel', () => {

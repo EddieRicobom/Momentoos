@@ -18,6 +18,7 @@ interface FakeStage {
   options: Record<string, any>;
   attach: ReturnType<typeof vi.fn>;
   setView: ReturnType<typeof vi.fn>;
+  setTool: ReturnType<typeof vi.fn>;
   focusItem: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
 }
@@ -27,7 +28,7 @@ let webgl = true;
 vi.mock('../src/ui/previewStage', () => ({
   createPreviewStage: (options: Record<string, any>) => {
     if (!webgl) return null;
-    const stage: FakeStage = { options, attach: vi.fn(), setView: vi.fn(), focusItem: vi.fn(), dispose: vi.fn() };
+    const stage: FakeStage = { options, attach: vi.fn(), setView: vi.fn(), setTool: vi.fn(), focusItem: vi.fn(), dispose: vi.fn() };
     stages.push(stage);
     return stage;
   },
@@ -355,7 +356,21 @@ describe('ajustar e salvar', () => {
     await ready(root);
     setSlider(slider(root, 'Tamanho'), 2.5);
     expect(root.querySelector('.slider-value')?.parentElement?.textContent).toBeDefined();
-    expect([...root.querySelectorAll('output')].some((o) => o.textContent === '2,50 ×')).toBe(true);
+    expect((root.querySelector('input[aria-label="Tamanho valor"]') as HTMLInputElement).value).toBe('2,5');
+    expect([...root.querySelectorAll('output')].some((o) => o.textContent === '×')).toBe(true);
+  });
+
+  it('permite digitar um valor preciso e desfazer a edição', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo, true);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    const numeric = root.querySelector('input[aria-label="Tamanho valor"]') as HTMLInputElement;
+    numeric.value = '2,75';
+    numeric.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(slider(root, 'Tamanho').value).toBe('2.75');
+    (root.querySelector('button[aria-label="Desfazer"]') as HTMLButtonElement).click();
+    expect(slider(root, 'Tamanho').value).toBe('1');
   });
 
   it('arrastar na prévia move o item, atualiza os controles e fica como alteração pendente', async () => {

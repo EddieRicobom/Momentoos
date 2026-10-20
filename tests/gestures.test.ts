@@ -30,9 +30,9 @@ describe('um dedo', () => {
   it('em cima de um item: seleciona e arrasta', () => {
     const { tracker, log } = setup();
     tracker.down(1, { x: 0, y: 0 });
-    tracker.move(1, { x: 5, y: 3 });
+    tracker.move(1, { x: 10, y: 3 });
     tracker.up(1);
-    expect(log).toEqual(['select:a', 'drag:a:5,3']);
+    expect(log).toEqual(['select:a', 'drag:a:10,3']);
   });
 
   it('em área vazia: só desmarca ao soltar sem ter andado', () => {
@@ -57,6 +57,15 @@ describe('um dedo', () => {
     tracker.move(1, { x: 303, y: 302 });
     tracker.up(1);
     expect(log).toEqual(['select:null']);
+  });
+
+  it('um toque no objeto não inicia arrasto até passar do limite de tremor', () => {
+    const { tracker, log, ends } = setup();
+    tracker.down(1, { x: 0, y: 0 });
+    tracker.move(1, { x: 5, y: 3 });
+    tracker.up(1);
+    expect(log).toEqual(['select:a']);
+    expect(ends).toHaveLength(0);
   });
 
   it('gesto cancelado pelo sistema nunca desmarca', () => {
@@ -172,8 +181,8 @@ describe('dois dedos', () => {
     tracker.up(2);
     tracker.up(1);
     tracker.down(3, { x: 0, y: 0 });
-    tracker.move(3, { x: 4, y: 4 });
-    expect(log).toEqual(['select:a', 'drag:a:4,4']);
+    tracker.move(3, { x: 8, y: 8 });
+    expect(log).toEqual(['select:a', 'drag:a:8,8']);
   });
 
   it('três dedos: o terceiro não inicia nada novo', () => {
@@ -298,7 +307,7 @@ describe('fim do gesto (guias da prévia)', () => {
   it('avisa quando um arrasto termina', () => {
     const { tracker, ends } = setup();
     tracker.down(1, { x: 0, y: 0 });
-    tracker.move(1, { x: 5, y: 3 });
+    tracker.move(1, { x: 10, y: 3 });
     tracker.up(1);
     expect(ends).toHaveLength(1);
   });
