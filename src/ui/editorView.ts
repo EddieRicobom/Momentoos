@@ -989,7 +989,7 @@ export const editorView: View = (context, root) => {
       panel.replaceChildren(
         h('h2', { class: 'card-title' }, draft.length === 0 ? 'Comece por aqui' : 'Escolha uma lembrança'),
         h('p', { class: 'muted' }, draft.length === 0
-          ? 'Toque em “Adicionar lembranças”, escolha um arquivo e confira a miniatura antes de confirmar. Depois, selecione a lembrança para mover, girar ou ajustar o tamanho.'
+          ? 'Adicione fotos, vídeos ou sons para começar. Toque em “Adicionar lembranças”, escolha um arquivo e confira a miniatura antes de confirmar. Depois, selecione a lembrança para mover, girar ou ajustar o tamanho.'
           : 'Toque numa lembrança da lista ou da prévia. Use Mover, Girar ou Tamanho sobre a cena; os controles precisos ficam abaixo.'),
       );
       return;
