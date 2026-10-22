@@ -70,7 +70,8 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
   const transformControls = new TransformControls(camera, renderer.domElement);
   transformControls.setMode('rotate');
   transformControls.setSpace('local');
-  transformControls.size = 0.78;
+  // Maior presença visual e área de toque para mover, girar e redimensionar.
+  transformControls.size = 1.55;
   scene.add(transformControls);
   let gizmoItemId: string | null = null;
   let activeTool: PreviewTool = 'select';

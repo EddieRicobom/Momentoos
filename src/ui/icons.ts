@@ -26,6 +26,9 @@ const PATHS = {
   pause: '<path d="M8 5v14M16 5v14"/>',
   resize: '<path d="M4 14v6h6M20 10V4h-6M4 20l7-7M20 4l-7 7"/>',
   scan: '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
+  select: '<path d="M6 3l12 11-6 .8-2.6 5.2L6 3z"/><path d="M13 15l4 5"/>',
+  move: '<path d="M12 3v18M3 12h18M12 3l-3 3m3-3 3 3M12 21l-3-3m3 3 3-3M3 12l3-3m-3 3 3 3m15-3-3-3m3 3-3 3"/>',
+  rotate: '<path d="M20 7v5h-5"/><path d="M19 12a7 7 0 1 1-2-5l3 5"/>',
 } as const;
 
 export type IconName = keyof typeof PATHS;

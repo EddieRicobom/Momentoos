@@ -91,14 +91,21 @@ export const editorView: View = (context, root) => {
   const counter = h('span', { class: 'muted' });
   const frontButton = h('button', { class: 'btn', type: 'button', onclick: () => setView('front') }, 'De frente');
   const tiltedButton = h('button', { class: 'btn', type: 'button', onclick: () => setView('tilted') }, 'Inclinada');
+  const toolDetails: Record<PreviewTool, { label: string; hint: string; icon: Parameters<typeof icon>[0] }> = {
+    select: { label: 'Selecionar', hint: 'Toque para escolher. Arraste para mover; use dois dedos para girar e mudar o tamanho.', icon: 'select' },
+    move: { label: 'Mover', hint: 'Arraste uma seta colorida para mover no eixo indicado.', icon: 'move' },
+    rotate: { label: 'Girar', hint: 'Arraste um anel colorido para girar no eixo indicado.', icon: 'rotate' },
+    scale: { label: 'Tamanho', hint: 'Arraste uma alça para redimensionar sem deformar.', icon: 'resize' },
+  };
   const toolButtons = (['select', 'move', 'rotate', 'scale'] as const).map((tool) => h('button', {
     class: 'btn tool-button',
     type: 'button',
     'data-tool': tool,
+    'aria-label': toolDetails[tool].label,
     'aria-pressed': String(tool === 'select'),
-    title: tool === 'select' ? 'Selecionar e ajustar com gestos' : tool === 'move' ? 'Mover pelos eixos X, Y e Z' : tool === 'rotate' ? 'Girar pelos anéis X, Y e Z' : 'Redimensionar mantendo proporção',
+    title: toolDetails[tool].hint,
     onclick: () => setTool(tool),
-  }, tool === 'select' ? 'Selecionar' : tool === 'move' ? 'Mover' : tool === 'rotate' ? 'Girar' : 'Tamanho'));
+  }, icon(toolDetails[tool].icon), h('span', {}, toolDetails[tool].label)));
   const playButton = h('button', { class: 'btn btn-play', type: 'button', onclick: () => void togglePlay() }, 'Reproduzir prévia');
   const focusButton = h('button', { class: 'btn focus-camera', type: 'button', 'aria-label': 'Ver de perto a lembrança selecionada', title: 'Ver de perto', onclick: () => stage?.focusItem(selectedId) }, icon('center'), h('span', { class: 'focus-label' }, 'Ver de perto'));
   const layoutBox = h('section', { class: 'card layout-box', 'aria-label': 'Formas de reunir lembranças' });
@@ -272,7 +279,7 @@ export const editorView: View = (context, root) => {
     stopPresentation();
     stage?.setTool(next);
     for (const button of toolButtons) button.setAttribute('aria-pressed', String(button.dataset.tool === next));
-    toolHint.textContent = next === 'select' ? 'Arraste o objeto para mover; use dois dedos para girar e redimensionar.' : next === 'move' ? 'Arraste uma seta para mover no eixo indicado.' : next === 'rotate' ? 'Arraste um anel para girar em torno do eixo indicado.' : 'Arraste uma alça para redimensionar sem deformar.';
+    toolHint.textContent = toolDetails[next].hint;
   }
 
   async function togglePlay(): Promise<void> {
@@ -980,8 +987,10 @@ export const editorView: View = (context, root) => {
     const item = selected();
     if (!item) {
       panel.replaceChildren(
-        h('h2', { class: 'card-title' }, 'Item selecionado'),
-        h('p', { class: 'muted' }, draft.length === 0 ? 'Adicione fotos, vídeos ou sons para começar.' : 'Toque numa lembrança da lista ou da prévia para ajustá-la.'),
+        h('h2', { class: 'card-title' }, draft.length === 0 ? 'Comece por aqui' : 'Escolha uma lembrança'),
+        h('p', { class: 'muted' }, draft.length === 0
+          ? 'Toque em “Adicionar lembranças”, escolha um arquivo e confira a miniatura antes de confirmar. Depois, selecione a lembrança para mover, girar ou ajustar o tamanho.'
+          : 'Toque numa lembrança da lista ou da prévia. Use Mover, Girar ou Tamanho sobre a cena; os controles precisos ficam abaixo.'),
       );
       return;
     }
@@ -1152,9 +1161,10 @@ export const editorView: View = (context, root) => {
 
   function redrawList(): void {
     counter.textContent = `${draft.length}/${MAX_ITEMS_PER_PROJECT} lembranças`;
-    addLabel.setAttribute('aria-disabled', String(draft.length >= MAX_ITEMS_PER_PROJECT));
+    const full = draft.length >= MAX_ITEMS_PER_PROJECT;
+    addLabel.setAttribute('aria-disabled', String(full));
+    fileInput.disabled = full;
     list.replaceChildren(
-      h('li', {}, addLabel),
       ...draft.map((item) =>
         h(
           'li',
@@ -1412,7 +1422,7 @@ export const editorView: View = (context, root) => {
           h(
             'section',
             { class: 'stack' },
-            h('div', { class: 'items-head' }, h('h2', { class: 'card-title' }, 'Suas lembranças'), counter),
+            h('div', { class: 'items-head' }, h('div', { class: 'items-heading' }, h('h2', { class: 'card-title' }, 'Suas lembranças'), counter), addLabel),
             list,
             addConfirmBox,
             choiceBox,
