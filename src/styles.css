@@ -1033,7 +1033,7 @@ input[type='range']:disabled {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: clamp(250px, 40dvh, 460px);
+  height: clamp(280px, 46dvh, 520px);
   margin: 0 12px;
   border-radius: var(--radius);
   overflow: hidden;
@@ -1075,8 +1075,11 @@ input[type='range']:disabled {
   left: 8px;
   z-index: 2;
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 5px;
   max-width: calc(100% - 16px);
+  overflow-x: auto;
+  scrollbar-width: none;
   padding: 4px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 14px;
@@ -1084,14 +1087,19 @@ input[type='range']:disabled {
   backdrop-filter: blur(8px);
 }
 
+.transform-toolbar::-webkit-scrollbar { display: none; }
+
 .tool-button {
-  min-height: 40px;
-  padding-inline: 12px;
+  min-width: 78px;
+  min-height: 48px;
+  padding: 0 10px;
   border-color: transparent;
   background: transparent;
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   white-space: nowrap;
 }
+
+.tool-button .icon { width: 19px; height: 19px; }
 
 .tool-button[aria-pressed='true'] {
   border-color: var(--accent);
@@ -1209,6 +1217,8 @@ input[type='range']:disabled {
   gap: 8px;
 }
 
+.items-heading { display: grid; gap: 2px; min-width: 0; }
+
 .items-head .card-title {
   font-size: 0.95rem;
 }
@@ -1235,7 +1245,8 @@ input[type='range']:disabled {
 .add-chip {
   min-height: 46px;
   border-radius: 999px;
-  padding: 0 16px;
+  padding: 0 14px;
+  white-space: nowrap;
 }
 
 .item-row {
@@ -1670,7 +1681,7 @@ input[type='range']:disabled {
 
 @media (min-width: 720px) {
   .editor-stagewrap {
-    height: clamp(360px, 56dvh, 680px);
+    height: clamp(400px, 60dvh, 720px);
   }
 }
 
@@ -1772,10 +1783,14 @@ input[type='range']:disabled {
   }
 
   .tool-button {
-    min-height: 38px;
-    padding-inline: 8px;
-    font-size: 0.74rem;
+    min-width: 68px;
+    min-height: 44px;
+    gap: 4px;
+    padding-inline: 7px;
+    font-size: 0.7rem;
   }
+
+  .tool-button .icon { width: 17px; height: 17px; }
 
   .tool-hint {
     top: 54px;
