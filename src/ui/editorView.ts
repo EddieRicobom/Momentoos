@@ -47,6 +47,7 @@ export const editorView: View = (context, root) => {
   let runtime: SceneRuntime | null = null;
   let stage: PreviewStage | null = null;
   let view: PreviewView = 'tilted';
+  let tool: PreviewTool = 'select';
   let playing = false;
   let confirmingRemove = false;
   /** Várias imagens escolhidas de uma vez, esperando a decisão: carrossel ou itens separados. */
@@ -114,6 +115,7 @@ export const editorView: View = (context, root) => {
     title: toolDetails[tool].hint,
     onclick: () => setTool(tool),
   }, icon(toolDetails[tool].icon), h('span', {}, toolDetails[tool].label)));
+  const transformToolbar = h('div', { class: 'transform-toolbar', role: 'group', 'aria-label': 'Ferramentas de edição' }, ...toolButtons);
   const playButton = h('button', { class: 'btn btn-play', type: 'button', onclick: () => void togglePlay() }, 'Reproduzir prévia');
   const focusButton = h('button', { class: 'btn focus-camera', type: 'button', 'aria-label': 'Ver de perto a lembrança selecionada', title: 'Ver de perto', onclick: () => stage?.focusItem(selectedId) }, icon('center'), h('span', { class: 'focus-label' }, 'Ver de perto'));
   const overviewButton = h('button', { class: 'btn', type: 'button', onclick: () => { stopPresentation(); runtime?.finishTransitions(); stage?.frameAll(); } }, icon('scan'), 'Ver tudo');
@@ -136,6 +138,8 @@ export const editorView: View = (context, root) => {
   function setSection(next: typeof section): void {
     if (section === 'layouts' && next !== 'layouts' && layoutOriginal) cancelLayout();
     section = next;
+    transformToolbar.hidden = next !== 'objects';
+    toolHint.hidden = next !== 'objects';
     for (const [id, element] of [['objects', panel], ['layouts', layoutBox], ['motion', motionBox], ['present', projectSettings]] as const) {
       element.id = `workspace-${id}`;
       element.setAttribute('role', 'tabpanel');
@@ -143,6 +147,7 @@ export const editorView: View = (context, root) => {
       element.hidden = id !== section;
     }
     if (next === 'present') projectSettings.open = true;
+    if (next === 'objects' && tool !== 'select') stage?.focusItem(selectedId);
     sectionButtons.forEach((button, i) => { const active = ['objects', 'layouts', 'motion', 'present'][i] === next; button.setAttribute('aria-selected', String(active)); button.tabIndex = active ? 0 : -1; });
   }
   sectionButtons.forEach((button, index) => button.addEventListener('keydown', (event) => {
@@ -324,7 +329,9 @@ export const editorView: View = (context, root) => {
 
   function setTool(next: PreviewTool): void {
     stopPresentation();
+    tool = next;
     stage?.setTool(next);
+    if (next !== 'select' && section === 'objects') stage?.focusItem(selectedId);
     for (const button of toolButtons) button.setAttribute('aria-pressed', String(button.dataset.tool === next));
     toolHint.textContent = toolDetails[next].hint;
   }
@@ -1364,6 +1371,15 @@ export const editorView: View = (context, root) => {
 
   function redrawSaveBar(): void {
     const isDirtyNow = dirty();
+    if (layoutOriginal) {
+      saveBar.hidden = false;
+      saveBar.replaceChildren(
+        h('span', { class: 'chip-text' }, 'Prévia do layout'),
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: confirmLayout }, 'Confirmar layout'),
+        h('button', { class: 'btn', type: 'button', onclick: cancelLayout }, 'Cancelar'),
+      );
+      return;
+    }
     saveBar.hidden = !isDirtyNow && !busy;
     saveBar.replaceChildren(
       h('span', { class: 'chip-text' }, isDirtyNow ? 'Alterações não salvas' : 'Tudo salvo'),
@@ -1427,6 +1443,7 @@ export const editorView: View = (context, root) => {
     }
     if (!presentationInternalSelect) stopPresentation();
     selectedId = id;
+    if (tool !== 'select' && section === 'objects') stage?.focusItem(id);
     confirmingRemove = false;
     for (const button of toolButtons) button.disabled = busy || id === null;
     redrawList();
@@ -1511,6 +1528,7 @@ export const editorView: View = (context, root) => {
       getSelectedId: () => selectedId,
       getGridSnap: () => gridSnap,
       getIsPlaying: () => playing,
+      getShowTools: () => section === 'objects',
       onSelect: (id) => selectItem(id),
       onDrag: (id, x, y) => {
         stopPresentation();
@@ -1585,7 +1603,7 @@ export const editorView: View = (context, root) => {
           'div',
           { class: 'editor-stagewrap' },
           stageBox,
-          h('div', { class: 'transform-toolbar', role: 'group', 'aria-label': 'Ferramentas de edição' }, ...toolButtons),
+          transformToolbar,
           toolHint,
           stageNote,
           h('div', { class: 'stage-tools' }, h('div', { class: 'seg', role: 'group', 'aria-label': 'Ponto de vista da prévia' }, frontButton, tiltedButton), focusButton, overviewButton, playButton),

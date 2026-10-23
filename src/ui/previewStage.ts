@@ -25,6 +25,7 @@ export interface PreviewStageOptions {
   getSelectedId(): string | null;
   getGridSnap(): boolean;
   getIsPlaying?(): boolean;
+  getShowTools?(): boolean;
   onSelect(id: string | null): void;
   onDrag(id: string, x: number, y: number): void;
   /** Giro atual (Z, graus) do item, ou null se ele não puder girar. */
@@ -212,11 +213,21 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       const bounds = allBounds ?? new THREE.Box3().setFromObject(root!);
       if (!bounds.isEmpty()) {
         bounds.getCenter(target);
-        const size = bounds.getSize(new THREE.Vector3());
-        const verticalAngle = THREE.MathUtils.degToRad(camera.fov / 2);
-        const angle = Math.min(verticalAngle, Math.atan(Math.tan(verticalAngle) * camera.aspect));
-        const fitHeight = size.length() * 0.65 / Math.sin(angle);
-        desiredDistance = THREE.MathUtils.clamp(fitHeight, 0.7, 25);
+        const direction = camera.position.clone().sub(cameraTarget).normalize();
+        if (direction.lengthSq() < 1e-6) direction.set(0, -0.7, 0.7).normalize();
+        const right = new THREE.Vector3(0, 1, 0).cross(direction).normalize();
+        if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+        const up = direction.clone().cross(right).normalize();
+        const vertical = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+        const horizontal = vertical * Math.max(camera.aspect, 0.1);
+        let distance = 0;
+        // Enquadra os oito cantos na orientação atual, sem afastar demais a cena.
+        for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
+          const corner = new THREE.Vector3(x, y, z).sub(target);
+          const depth = corner.dot(direction);
+          distance = Math.max(distance, depth + Math.abs(corner.dot(right)) / horizontal, depth + Math.abs(corner.dot(up)) / vertical);
+        }
+        desiredDistance = THREE.MathUtils.clamp(distance * 1.18, 0.7, 25);
       }
       else if (root) target.copy(root.position);
     }
@@ -320,7 +331,7 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
     if (!runtime) return;
     if (transformControls.dragging || transformControls.axis !== null) return;
     cameraMotion = null;
-    if (activeTool !== 'select') {
+    if (activeTool !== 'select' || options.getShowTools?.() === false) {
       setRay(toPoint(event));
       const hit = raycaster.intersectObject(runtime.group, true).find((entry) => runtime!.itemIdOf(entry.object) !== null && visibleInScene(entry.object));
       if (hit) options.onSelect(runtime.itemIdOf(hit.object));
@@ -362,7 +373,8 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
 
     const selected = options.getSelectedId();
     const root = selected && runtime ? runtime.rootOf(selected) : null;
-    const transformNode = !selected || !runtime || options.getIsPlaying?.() ? null : activeTool === 'move' ? root : activeTool === 'rotate' ? runtime.rotationOf(selected) : activeTool === 'scale' ? runtime.scaleNodeOf(selected) : null;
+    const showTools = options.getShowTools?.() !== false;
+    const transformNode = !selected || !runtime || options.getIsPlaying?.() || !showTools ? null : activeTool === 'move' ? root : activeTool === 'rotate' ? runtime.rotationOf(selected) : activeTool === 'scale' ? runtime.scaleNodeOf(selected) : null;
     gizmoItemId = selected;
     if (transformNode !== transformControls.object) {
       if (transformNode) transformControls.attach(transformNode);
@@ -376,7 +388,7 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
     if (root) {
       root.updateMatrixWorld(true);
       selectionBox.setFromObject(root);
-      selectionHelper.visible = !selectionBox.isEmpty();
+      selectionHelper.visible = showTools && !selectionBox.isEmpty();
     } else {
       selectionHelper.visible = false;
     }
