@@ -293,3 +293,22 @@ constar na documentação como limitação.
 - Tamanho do `.mind`:
 - Itens usados na Parte 9 (tipos, tamanhos):
 - Observações gerais:
+
+## Parte 13: Layouts, apoio e movimento dos objetos
+
+Executar em desktop e em celular; estas verificações exigem WebGL e arquivos reais.
+Os testes automatizados usam geometria e DOM simulados e não substituem este roteiro.
+
+| # | Ação | Resultado esperado |
+|---|---|---|
+| 13.1 | Adicione um retrato alto e uma foto horizontal, depois um GLB. | As proporções se mantêm; o novo item é apoiado na tatuagem. Havendo espaço, ele aparece fora dos limites dos demais. |
+| 13.2 | Abra Layouts e experimente os cinco cartões, inclusive Escadinha 3D. | Os objetos mudam de lugar suavemente e a câmera enquadra a composição. A escadinha tem alturas diferentes. |
+| 13.3 | Mude o espaçamento e alterne entre manter inclinação, em pé e deitados. | Cada variação parte da disposição anterior à prévia; não encolhe repetidamente os itens. Nomes, arquivos, áudio e itens ocultos permanecem intactos. |
+| 13.4 | Durante uma prévia, volte para Ajustar ou saia do editor sem confirmar. | A disposição da prévia não é salva; ajustes anteriores a ela permanecem. |
+| 13.5 | Confirme um layout, desfaça e refaça. Salve e reabra. | Um passo do histórico restaura o conjunto. A posição confirmada é mantida ao reabrir. |
+| 13.6 | Escolha Flutuar, Passeio em 3D e Balanço suave na aba Movimentos. | Os itens fazem percursos curtos, com fases diferentes e sem descer da posição original. Alterar a velocidade reinicia a prévia suavemente. |
+| 13.7 | Aplique o movimento só ao selecionado, salve, exporte e importe o backup. | Somente o item escolhido se move; a escolha e a velocidade permanecem no backup e aparecem na câmera quando a tatuagem é reconhecida. |
+| 13.8 | Durante a reprodução, comece a ajustar um item. | Movimento e apresentação pausam; o item volta à posição de edição e o gizmo corresponde aos números do painel. |
+| 13.9 | Ative reduzir movimento no sistema. Repita a prévia e a apresentação. | Os percursos dos objetos ficam desativados e as mudanças de layout/câmera são imediatas. |
+| 13.10 | Gire e aumente um objeto em pé, inclusive com gestos de dois dedos. Use Apoiar na tatuagem e Ver tudo. | O objeto não entra no plano da pele; apoiar usa o limite real inferior e Ver tudo mostra a composição inteira. |
+| 13.11 | Use Tab e as setas nas quatro abas, e depois toque nelas no celular. | Só o painel ativo aparece, foco e rótulos são claros e todos os botões continuam acessíveis. |

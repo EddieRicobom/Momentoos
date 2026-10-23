@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrangeItems, type SceneLayout } from '../src/scene/layouts';
+import { arrangeItems, layoutExtent, SCENE_LAYOUTS, type SceneLayout } from '../src/scene/layouts';
 import { defaultOptions, defaultTransform, type SceneItem } from '../src/storage/model';
 
 function item(id: string, type: SceneItem['type'] = 'image'): SceneItem {
@@ -37,5 +37,33 @@ describe('arrangeItems', () => {
     const only = item('one');
     expect(arrangeItems([only], 'gallery', 0.75)[0]).toEqual(only);
     expect(arrangeItems([item('audio', 'audio')], 'gallery', 0.75)[0]).toEqual(item('audio', 'audio'));
+  });
+
+  it.each([2, 8, 24, 100])('acomoda %i retratos, preserva ocultos e apoia os objetos em pé', (count) => {
+    const input = Array.from({ length: count }, (_, i) => ({ ...item(String(i)), file: { ...item(String(i)).file, width: 100, height: i % 2 ? 500 : 100 } }));
+    const hidden = { ...item('hidden'), visible: false };
+    for (const layout of SCENE_LAYOUTS) {
+      const arranged = arrangeItems([...input, hidden], layout.id, 0.6, { orientation: 'upright' });
+      expect(arranged.at(-1)).toEqual(hidden);
+      arranged.slice(0, count).forEach((entry, i) => {
+        const bounds = layoutExtent(entry, entry.transform.rotation);
+        expect(entry.transform.position[2] + bounds.minZ * entry.transform.scale).toBeGreaterThanOrEqual(-1e-9);
+        expect(Math.abs(entry.transform.position[0]) + bounds.radius * entry.transform.scale).toBeLessThanOrEqual(0.5 + 1e-9);
+        expect(Math.abs(entry.transform.position[1]) + bounds.radius * entry.transform.scale).toBeLessThanOrEqual(0.3 + 1e-9);
+        for (const other of arranged.slice(i + 1, count)) {
+          const distance = Math.hypot(entry.transform.position[0] - other.transform.position[0], entry.transform.position[1] - other.transform.position[1]);
+          const radius = layoutExtent(other, other.transform.rotation).radius * other.transform.scale;
+          expect(distance).toBeGreaterThanOrEqual(bounds.radius * entry.transform.scale + radius - 1e-9);
+        }
+      });
+    }
+  });
+
+  it('usa profundidade na escadinha, sem alterar os arquivos de origem', () => {
+    const input = Array.from({ length: 6 }, (_, i) => item(String(i)));
+    const before = JSON.stringify(input);
+    const result = arrangeItems(input, 'cascade', 0.75);
+    expect(new Set(result.map((entry) => entry.transform.position[2])).size).toBeGreaterThan(1);
+    expect(JSON.stringify(input)).toBe(before);
   });
 });

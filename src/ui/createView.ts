@@ -483,6 +483,7 @@ export const createView: View = (context, root) => {
       'main',
       { class: 'screen' },
       topBar('Criar uma lembrança', () => context.navigate('home')),
+      h('p', { class: 'muted' }, 'Primeiro, escolha a tatuagem. Depois de salvá-la, você poderá adicionar fotos, organizar os momentos em layouts e escolher movimentos.'),
       h('div', { class: 'status-row' }, chip.element),
       h(
         'section',

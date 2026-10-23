@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { ItemTransform, SceneItem } from '../storage/model';
 import { placementOf } from './placement';
+import { motionOffset } from './motion';
 import type { ItemController, ItemLoaders } from './types';
 
 /**
@@ -60,6 +61,8 @@ export interface RuntimeSummary {
 }
 
 export interface SceneRuntimeOptions {
+  /** Permite conferir movimento reduzido também em testes sem navegador. */
+  reducedMotion?: boolean;
   items: readonly SceneItem[];
   /** Bytes do arquivo de um item (já conferidos pelo armazenamento). */
   openFile(itemId: string): Promise<ArrayBuffer>;
@@ -81,6 +84,10 @@ interface Entry {
   nodes?: ItemNodes;
 }
 
+interface TransitionPose { position: THREE.Vector3; rotation: THREE.Quaternion; offset: THREE.Vector3; scale: THREE.Vector3 }
+interface ItemTransition { from: TransitionPose; to: TransitionPose; elapsed: number; duration: number }
+const poseOf = (nodes: ItemNodes): TransitionPose => ({ position: nodes.root.position.clone(), rotation: nodes.rotation.quaternion.clone(), offset: nodes.offset.position.clone(), scale: nodes.scale.scale.clone() });
+
 const errorText = (error: unknown): string =>
   error instanceof Error && error.message ? error.message : 'Falha ao carregar o item.';
 
@@ -89,8 +96,14 @@ export class SceneRuntime {
   private readonly entries = new Map<string, Entry>();
   private readonly options: SceneRuntimeOptions;
   private active = false;
+  private motionActive = false;
   private disposed = false;
   private lights: THREE.Light[] = [];
+  private motionTime = 0;
+  private readonly motionQuery = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
+  private readonly transitions = new Map<string, ItemTransition>();
+
+  private get reducedMotion(): boolean { return this.options.reducedMotion ?? this.motionQuery?.matches ?? false; }
 
   constructor(options: SceneRuntimeOptions) {
     this.options = options;
@@ -190,8 +203,20 @@ export class SceneRuntime {
   /** Tatuagem reconhecida (true) ou perdida (false). */
   async setTracking(found: boolean): Promise<void> {
     this.active = found;
+    this.setMotionActive(found);
     await Promise.all([...this.entries.values()].map((entry) => this.activate(entry, found)));
     this.emit();
+  }
+
+  /** No editor, apresentar os objetos não deve iniciar todas as músicas ao mesmo tempo. */
+  setMotionActive(active: boolean): void {
+    this.motionActive = active;
+    if (!active) {
+      this.motionTime = 0;
+      for (const entry of this.entries.values()) {
+        if (entry.nodes && !this.transitions.has(entry.item.id)) applyItemTransform(entry.nodes, entry.item.transform);
+      }
+    }
   }
 
   /** Ativa ou pausa um único item de mídia durante a apresentação. */
@@ -219,9 +244,36 @@ export class SceneRuntime {
 
   /** A cada quadro: animações de modelos e GIFs. */
   update(deltaSeconds: number): void {
+    const dt = Number.isFinite(deltaSeconds) ? Math.max(0, Math.min(deltaSeconds, 0.1)) : 0;
+    if (this.reducedMotion) this.motionTime = 0;
+    else if (this.motionActive) this.motionTime += dt;
+    let phase = 0;
     for (const entry of this.entries.values()) {
       if (entry.state !== 'ready' || !entry.controller) continue;
+      phase += 1.1;
       try {
+        const transition = this.transitions.get(entry.item.id);
+        if (transition && entry.nodes) {
+          transition.elapsed += dt;
+          const fraction = this.reducedMotion ? 1 : Math.min(1, transition.elapsed / transition.duration);
+          const t = fraction * fraction * (3 - 2 * fraction);
+          entry.nodes.root.position.lerpVectors(transition.from.position, transition.to.position, t);
+          entry.nodes.rotation.quaternion.slerpQuaternions(transition.from.rotation, transition.to.rotation, t);
+          entry.nodes.offset.position.lerpVectors(transition.from.offset, transition.to.offset, t);
+          entry.nodes.scale.scale.lerpVectors(transition.from.scale, transition.to.scale, t);
+          if (transition.from.rotation.angleTo(transition.to.rotation) > 0.0001 && fraction < 1) {
+            entry.nodes.root.updateWorldMatrix(true, true);
+            const bounds = new THREE.Box3().setFromObject(entry.nodes.root);
+            if (!bounds.isEmpty() && bounds.min.z < 0) entry.nodes.root.position.z -= bounds.min.z;
+          }
+          if (fraction >= 1) this.transitions.delete(entry.item.id);
+        } else if (entry.nodes) {
+          const [x, y, z] = entry.item.transform.position;
+          const offset = this.motionActive && entry.item.visible && !this.reducedMotion
+            ? motionOffset(entry.item.options.motion ?? 'none', this.motionTime, entry.item.transform.scale, entry.item.options.motionSpeed, phase)
+            : [0, 0, 0];
+          entry.nodes.root.position.set(x + offset[0]!, y + offset[1]!, z + offset[2]!);
+        }
         entry.controller.update(deltaSeconds);
       } catch (error) {
         this.fail(entry, error);
@@ -232,6 +284,7 @@ export class SceneRuntime {
 
   /** Aplica ao vivo o que mudou num item (usado pelo editor). */
   updateItem(item: SceneItem): void {
+    this.transitions.delete(item.id);
     const entry = this.entries.get(item.id);
     if (!entry) return;
     entry.item = item;
@@ -240,6 +293,58 @@ export class SceneRuntime {
     entry.nodes.root.visible = item.visible;
     entry.controller.setOpacity(item.options.opacity);
     entry.controller.configure?.(item);
+  }
+
+  /** Anime a troca de disposição sem alterar os arquivos nem os ajustes salvos. */
+  transitionItems(items: readonly SceneItem[], duration = 0.65): void {
+    for (const item of items) {
+      const nodes = this.entries.get(item.id)?.nodes;
+      const from = nodes ? poseOf(nodes) : null;
+      this.updateItem(item);
+      if (!nodes || !from || this.reducedMotion || duration <= 0 || item.type === 'audio') continue;
+      const to = poseOf(nodes);
+      nodes.root.position.copy(from.position);
+      nodes.rotation.quaternion.copy(from.rotation);
+      nodes.offset.position.copy(from.offset);
+      nodes.scale.scale.copy(from.scale);
+      this.transitions.set(item.id, { from, to, elapsed: 0, duration });
+    }
+  }
+
+  /** Antes de arrastar, o gizmo deve corresponder aos números do painel. */
+  finishTransitions(): void {
+    for (const id of this.transitions.keys()) {
+      const entry = this.entries.get(id);
+      if (entry?.nodes) applyItemTransform(entry.nodes, entry.item.transform);
+    }
+    this.transitions.clear();
+  }
+
+  /** Mede uma transformação candidata sem mudar a pose que está sendo exibida. */
+  boundsFor(id: string, transform: ItemTransform): THREE.Box3 | null {
+    const nodes = this.entries.get(id)?.nodes;
+    if (!nodes) return null;
+    const before = poseOf(nodes);
+    applyItemTransform(nodes, transform);
+    nodes.root.updateWorldMatrix(true, true);
+    const bounds = new THREE.Box3().setFromObject(nodes.root);
+    nodes.root.position.copy(before.position);
+    nodes.rotation.quaternion.copy(before.rotation);
+    nodes.offset.position.copy(before.offset);
+    nodes.scale.scale.copy(before.scale);
+    nodes.root.updateWorldMatrix(true, true);
+    return bounds.isEmpty() ? null : bounds;
+  }
+
+  /** Limites da disposição de destino, mesmo durante uma transição. */
+  sceneBounds(): THREE.Box3 {
+    const bounds = new THREE.Box3();
+    for (const entry of this.entries.values()) {
+      if (!entry.item.visible || entry.item.type === 'audio') continue;
+      const itemBounds = this.boundsFor(entry.item.id, entry.item.transform);
+      if (itemBounds) bounds.union(itemBounds);
+    }
+    return bounds;
   }
 
   /** Acrescenta e carrega um item depois da montagem inicial (editor). */
@@ -253,6 +358,7 @@ export class SceneRuntime {
 
   /** Tira um item da cena e libera seus recursos. */
   remove(id: string): void {
+    this.transitions.delete(id);
     const entry = this.entries.get(id);
     if (!entry) return;
     try {
@@ -329,6 +435,7 @@ export class SceneRuntime {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.transitions.clear();
     for (const entry of this.entries.values()) {
       try {
         entry.controller?.dispose();

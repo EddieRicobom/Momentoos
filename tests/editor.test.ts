@@ -20,22 +20,24 @@ interface FakeStage {
   setView: ReturnType<typeof vi.fn>;
   setTool: ReturnType<typeof vi.fn>;
   focusItem: ReturnType<typeof vi.fn>;
+  frameAll: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
 }
 const stages: FakeStage[] = [];
 let webgl = true;
+let visualGeometry = false;
 
 vi.mock('../src/ui/previewStage', () => ({
   createPreviewStage: (options: Record<string, any>) => {
     if (!webgl) return null;
-    const stage: FakeStage = { options, attach: vi.fn(), setView: vi.fn(), setTool: vi.fn(), focusItem: vi.fn(), dispose: vi.fn() };
+    const stage: FakeStage = { options, attach: vi.fn(), setView: vi.fn(), setTool: vi.fn(), focusItem: vi.fn(), frameAll: vi.fn(), dispose: vi.fn() };
     stages.push(stage);
     return stage;
   },
 }));
 
 const fakeController = (): ItemController => ({
-  object: new THREE.Group(),
+  object: visualGeometry ? new THREE.Mesh(new THREE.PlaneGeometry(0.5, 1)) : new THREE.Group(),
   blocked: false,
   needsLights: false,
   async setActive() {},
@@ -144,6 +146,7 @@ beforeEach(() => {
   stages.length = 0;
   toasts.length = 0;
   webgl = true;
+  visualGeometry = false;
   document.body.replaceChildren();
 });
 afterEach(() => {
@@ -205,6 +208,40 @@ describe('abrir o editor', () => {
 });
 
 describe('layouts e apresentação', () => {
+  it('salva movimentos no conjunto e pausa a prévia ao começar uma edição', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo, true);
+    await addItem(repo, project.id, { file: { data: signedBytes('image/png', 64, 8), fileName: 'azul.png', mimeType: 'image/png' } });
+    const { root, cleanup } = await mount(repo, project.id);
+    await ready(root);
+    button(root, 'Movimentos').click();
+    expect(root.querySelector('.motion-box')?.hasAttribute('hidden')).toBe(false);
+    button(root, /^Flutuar/).click();
+    await vi.waitFor(() => expect(root.textContent).toContain('Pausar movimentos'));
+    stages.at(-1)!.options.onManipulationStart();
+    stages.at(-1)!.options.onManipulationEnd();
+    expect(root.textContent).toContain('Experimentar movimentos');
+    button(root, 'Salvar').click();
+    await vi.waitFor(async () => expect((await savedItems(repo, project.id)).every((item) => item.options.motion === 'float')).toBe(true));
+    cleanup();
+  });
+
+  it('cancelar uma prévia ao trocar de aba preserva a disposição anterior', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo, true);
+    await addItem(repo, project.id, { file: { data: signedBytes('image/png', 64, 8), fileName: 'azul.png', mimeType: 'image/png' } });
+    const { root, cleanup } = await mount(repo, project.id);
+    await ready(root);
+    const before = await savedItems(repo, project.id);
+    button(root, 'Layouts').click();
+    (root.querySelector('.layout-option') as HTMLButtonElement).click();
+    expect(root.textContent).toContain('Prévia: Mural');
+    button(root, 'Ajustar').click();
+    expect(root.textContent).not.toContain('Alterações não salvas');
+    cleanup();
+    expect(await savedItems(repo, project.id)).toEqual(before);
+  });
+
   it('confirma um layout, desfaz e refaz a disposição, e centraliza a câmera', async () => {
     const repo = await freshRepository();
     const { project } = await newProject(repo, true);
@@ -242,6 +279,30 @@ describe('layouts e apresentação', () => {
 });
 
 describe('adicionar arquivos', () => {
+  it('apoia a geometria na tatuagem e procura espaço ao adicionar vários objetos', async () => {
+    visualGeometry = true;
+    const repo = await freshRepository();
+    const { project } = await newProject(repo);
+    const { root, cleanup } = await mount(repo, project.id);
+    await ready(root);
+    await chooseFiles(root, [file('retrato.png', 'image/png'), file('movimento.gif', 'image/gif', 2)]);
+    await vi.waitFor(async () => {
+      const items = await savedItems(repo, project.id);
+      expect(items).toHaveLength(2);
+      expect(items[1]!.transform.position[2]).toBeCloseTo(0.5);
+    });
+    const items = await savedItems(repo, project.id);
+    expect(items[0]!.transform.position).not.toEqual(items[1]!.transform.position);
+    const runtime = stages.at(-1)!.attach.mock.calls[0]![0];
+    const object = runtime.rootOf(items[1]!.id);
+    object.updateWorldMatrix(true, true);
+    expect(new THREE.Box3().setFromObject(object).min.z).toBeGreaterThanOrEqual(-1e-9);
+    setSlider(slider(root, 'Tamanho'), 2);
+    object.updateWorldMatrix(true, true);
+    expect(new THREE.Box3().setFromObject(object).min.z).toBeGreaterThanOrEqual(-1e-9);
+    cleanup();
+  });
+
   it('mostra a prévia inicial e permite cancelar sem gravar', async () => {
     const repo = await freshRepository();
     const { project } = await newProject(repo);

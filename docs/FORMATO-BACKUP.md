@@ -54,7 +54,7 @@ some se você mandar excluir.
 | `name`, `visible` | Nome de exibição e se aparece |
 | `file` | `mimeType`, `size`, `sha256`, `fileName` e, quando conhecidos, `width`, `height`, `durationMs` |
 | `transform` | `scale`, `rotation` (graus, x y z), `position` (x y z, em larguras do alvo) e `offset` (x y z, em larguras do alvo) |
-| `options` | `opacity`, `loop`, `muted`, `volume`, `animate`, `clip` (nome da animação do GLB ou `null`), `intervalMs` (500 a 60000; só vale para carrossel) e `fade` (só carrossel) |
+| `options` | `opacity`, `loop`, `muted`, `volume`, `animate`, `clip` (nome da animação do GLB ou `null`), `intervalMs` (500 a 60000; só vale para carrossel) e `fade` (só carrossel). Campos opcionais: `motion` (`none`, `float`, `orbit`, `sway`) e `motionSpeed` (0,25 a 2). Ausência equivale a parado e velocidade 1. |
 | `slides` | Só em `carousel`: lista ordenada de imagens, cada uma com `slot` (inteiro 0 a 9999, único no item; identifica o arquivo e não muda quando outras imagens saem) mais os campos de `file` |
 
 No carrossel, `file` é uma cópia da primeira imagem de `slides` (sem `slot`) e é

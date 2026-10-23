@@ -1061,6 +1061,7 @@ input[type='range']:disabled {
 .stage-tools {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -1068,6 +1069,52 @@ input[type='range']:disabled {
   border-top: 1px solid var(--line);
   background: var(--surface);
 }
+
+.stage-tools > .seg { margin-right: auto; }
+.stage-tools > .btn { min-height: 44px; }
+
+.workspace-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  position: sticky;
+  top: -12px;
+  z-index: 3;
+  padding: 6px 0;
+  background: var(--bg);
+}
+
+.workspace-tab {
+  min-height: 46px;
+  min-width: 0;
+  padding-inline: 5px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+}
+
+.workspace-tab[aria-selected='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.home-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  list-style: none;
+  margin: 18px 0;
+  padding: 0;
+}
+.home-steps li { display: grid; gap: 6px; padding: 10px 0; border-top: 2px solid var(--accent-soft); }
+.home-steps strong { font-size: 0.82rem; }
+.home-steps span { color: var(--muted); font-size: 0.76rem; line-height: 1.45; }
+
+.motion-box, .motion-options { display: grid; gap: 12px; }
+.motion-option { justify-content: flex-start; padding: 14px; text-align: left; }
+.motion-option > span { display: grid; gap: 4px; }
+.motion-option .muted { font-size: 0.8rem; font-weight: 400; }
+.motion-option[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-soft); }
 
 .transform-toolbar {
   position: absolute;
@@ -1646,6 +1693,12 @@ input[type='range']:disabled {
 .layout-thumb-carousel i:nth-child(3) { left: 42px; top: 29px; }
 .layout-thumb-carousel i:nth-child(4) { left: 16px; top: 29px; }
 .layout-thumb-carousel i:nth-child(5) { left: 12px; top: 13px; }
+.layout-thumb-cascade i { border-radius: 2px; }
+.layout-thumb-cascade i:nth-child(1) { left: 10px; top: 30px; }
+.layout-thumb-cascade i:nth-child(2) { left: 20px; top: 24px; }
+.layout-thumb-cascade i:nth-child(3) { left: 30px; top: 18px; }
+.layout-thumb-cascade i:nth-child(4) { left: 40px; top: 12px; }
+.layout-thumb-cascade i:nth-child(5) { left: 50px; top: 6px; }
 
 .youtube-player {
   width: 100%;
