@@ -128,7 +128,7 @@ const sameTransform = (a: ItemTransform, b: ItemTransform): boolean =>
   [0, 1, 2].every((i) => a.rotation[i] === b.rotation[i] && a.position[i] === b.position[i] && a.offset[i] === b.offset[i]);
 
 const sameOptions = (a: ItemOptions, b: ItemOptions): boolean =>
-  a.opacity === b.opacity && a.loop === b.loop && a.muted === b.muted && a.volume === b.volume && a.animate === b.animate && a.clip === b.clip && a.intervalMs === b.intervalMs && a.fade === b.fade;
+  a.opacity === b.opacity && a.loop === b.loop && a.muted === b.muted && a.volume === b.volume && a.animate === b.animate && a.clip === b.clip && a.intervalMs === b.intervalMs && a.fade === b.fade && (a.motion ?? 'none') === (b.motion ?? 'none') && (a.motionSpeed ?? 1) === (b.motionSpeed ?? 1);
 
 /** O que mudou em cada item do rascunho em relação ao que está salvo. */
 export function diffItems(saved: readonly SceneItem[], draft: readonly SceneItem[]): Map<string, ItemPatch> {

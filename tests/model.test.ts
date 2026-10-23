@@ -274,6 +274,8 @@ describe('cena (itens)', () => {
     ['volume negativo', { options: { volume: -0.1 } }],
     ['loop em texto', { options: { loop: 'sim' } }],
     ['clip vazio', { options: { clip: '' } }],
+    ['movimento desconhecido', { options: { motion: 'teleport' } }],
+    ['movimento rápido demais', { options: { motionSpeed: 20 } }],
   ])('rejeita item inválido: %s', async (_label, change) => {
     const base = item('i1', 'image');
     const mutated = {

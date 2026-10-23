@@ -24,6 +24,7 @@ export interface PreviewStageOptions {
   referenceImage: Blob | null;
   getSelectedId(): string | null;
   getGridSnap(): boolean;
+  getIsPlaying?(): boolean;
   onSelect(id: string | null): void;
   onDrag(id: string, x: number, y: number): void;
   /** Giro atual (Z, graus) do item, ou null se ele não puder girar. */
@@ -46,6 +47,7 @@ export interface PreviewStage {
   setView(view: PreviewView): void;
   setTool(tool: PreviewTool): void;
   focusItem(id: string | null): void;
+  frameAll(): void;
   dispose(): void;
 }
 
@@ -77,6 +79,7 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
   let activeTool: PreviewTool = 'select';
   let scaleAtStart = 1;
   transformControls.addEventListener('mouseDown', () => {
+    cameraMotion = null;
     if (activeTool === 'scale' && transformControls.object) scaleAtStart = transformControls.object.scale.x;
     options.onManipulationStart();
   });
@@ -200,20 +203,22 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
     camera.updateProjectionMatrix();
   }
 
-  const focusItem = (id: string | null): void => {
+  const focusItem = (id: string | null, allBounds?: THREE.Box3): void => {
     const root = id ? runtime?.rootOf(id) : null;
     const target = new THREE.Vector3();
     let desiredDistance: number | null = null;
-    if (root) {
-      root.updateMatrixWorld(true);
-      const bounds = new THREE.Box3().setFromObject(root);
+    if (root || allBounds) {
+      root?.updateWorldMatrix(true, true);
+      const bounds = allBounds ?? new THREE.Box3().setFromObject(root!);
       if (!bounds.isEmpty()) {
         bounds.getCenter(target);
         const size = bounds.getSize(new THREE.Vector3());
-        const fitHeight = Math.max(size.y, size.x / Math.max(camera.aspect, 0.1)) * 1.9 / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
-        desiredDistance = THREE.MathUtils.clamp(fitHeight, 0.7, 8);
+        const verticalAngle = THREE.MathUtils.degToRad(camera.fov / 2);
+        const angle = Math.min(verticalAngle, Math.atan(Math.tan(verticalAngle) * camera.aspect));
+        const fitHeight = size.length() * 0.65 / Math.sin(angle);
+        desiredDistance = THREE.MathUtils.clamp(fitHeight, 0.7, 25);
       }
-      else target.copy(root.position);
+      else if (root) target.copy(root.position);
     }
     const fromPosition = camera.position.clone();
     const fromTarget = cameraTarget.clone();
@@ -221,7 +226,7 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
     let direction = fromPosition.clone().sub(fromTarget);
     if (direction.lengthSq() < 1e-6) direction.set(0, -0.7, 0.7);
     direction.normalize();
-    const toPosition = id && desiredDistance !== null
+    const toPosition = (id || allBounds) && desiredDistance !== null
       ? toTarget.clone().addScaledVector(direction, desiredDistance)
       : toTarget.clone().add(new THREE.Vector3(...cameraPose(view, targetAspect, camera.aspect, camera.fov).position));
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
@@ -241,6 +246,11 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
   // Seleção, arrasto (1 dedo) e giro (2 dedos): a lógica está em scene/gestures.ts.
   const raycaster = new THREE.Raycaster();
 
+  const visibleInScene = (object: THREE.Object3D): boolean => {
+    for (let current: THREE.Object3D | null = object; current; current = current.parent) if (!current.visible) return false;
+    return true;
+  };
+
   const setRay = (point: Point): void => {
     const rect = renderer.domElement.getBoundingClientRect();
     const x = ((point.x - rect.left) / rect.width) * 2 - 1;
@@ -259,7 +269,7 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
     pick(point) {
       if (!runtime) return null;
       setRay(point);
-      const hit = raycaster.intersectObject(runtime.group, true).find((h) => runtime!.itemIdOf(h.object) !== null);
+      const hit = raycaster.intersectObject(runtime.group, true).find((h) => runtime!.itemIdOf(h.object) !== null && visibleInScene(h.object));
       return hit ? runtime.itemIdOf(hit.object) : null;
     },
     select: options.onSelect,
@@ -308,7 +318,14 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
 
   const onDown = (event: PointerEvent): void => {
     if (!runtime) return;
-    if (activeTool !== 'select' || transformControls.dragging || transformControls.axis !== null) return;
+    if (transformControls.dragging || transformControls.axis !== null) return;
+    cameraMotion = null;
+    if (activeTool !== 'select') {
+      setRay(toPoint(event));
+      const hit = raycaster.intersectObject(runtime.group, true).find((entry) => runtime!.itemIdOf(entry.object) !== null && visibleInScene(entry.object));
+      if (hit) options.onSelect(runtime.itemIdOf(hit.object));
+      return;
+    }
     try {
       canvas.setPointerCapture(event.pointerId);
     } catch {
@@ -345,7 +362,7 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
 
     const selected = options.getSelectedId();
     const root = selected && runtime ? runtime.rootOf(selected) : null;
-    const transformNode = !selected || !runtime ? null : activeTool === 'move' ? root : activeTool === 'rotate' ? runtime.rotationOf(selected) : activeTool === 'scale' ? runtime.scaleNodeOf(selected) : null;
+    const transformNode = !selected || !runtime || options.getIsPlaying?.() ? null : activeTool === 'move' ? root : activeTool === 'rotate' ? runtime.rotationOf(selected) : activeTool === 'scale' ? runtime.scaleNodeOf(selected) : null;
     gizmoItemId = selected;
     if (transformNode !== transformControls.object) {
       if (transformNode) transformControls.attach(transformNode);
@@ -382,6 +399,11 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       else transformControls.setMode(activeTool === 'move' ? 'translate' : activeTool === 'rotate' ? 'rotate' : 'scale');
     },
     focusItem,
+    frameAll() {
+      const bounds = new THREE.Box3().setFromObject(backdrop);
+      if (runtime) bounds.union(runtime.sceneBounds());
+      focusItem(null, bounds);
+    },
     dispose() {
       disposed = true;
       renderer.setAnimationLoop(null);

@@ -91,7 +91,7 @@ export const homeView: View = (context, root) => {
       h(
         'header',
         { class: 'hero' },
-        h('div', { class: 'brand' }, h('span', { class: 'brand-mark' }, icon('scan')), h('h1', { class: 'hero-title' }, 'Tattoo AR')),
+        h('div', { class: 'brand' }, h('span', { class: 'brand-mark' }, icon('scan')), h('h1', { class: 'hero-title' }, 'Momentoos')),
         h(
           'p',
           { class: 'hero-sub' },
@@ -100,11 +100,15 @@ export const homeView: View = (context, root) => {
         chip.element,
       ),
       cta,
+      h('ol', { class: 'home-steps', 'aria-label': 'Como guardar seus momentos' },
+        h('li', {}, h('strong', {}, '1. Sua tatuagem'), h('span', {}, 'Escolha uma foto nítida.')),
+        h('li', {}, h('strong', {}, '2. Seus momentos'), h('span', {}, 'Adicione e experimente um layout.')),
+        h('li', {}, h('strong', {}, '3. Ganham vida'), h('span', {}, 'Escolha movimentos e reveja na câmera.'))),
       list,
       h(
         'p',
         { class: 'footnote' },
-        'Protótipo em desenvolvimento. O reconhecimento em tatuagens reais e o salvamento no celular ainda precisam ser testados no aparelho: veja docs/TESTES-MANUAIS.md.',
+        'Protótipo em desenvolvimento. Experimente com boa iluminação e confira o resultado no seu aparelho. Exporte um backup para guardar suas lembranças em outro lugar.',
       ),
     ),
   );

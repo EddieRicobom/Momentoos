@@ -3,11 +3,14 @@ import { browserLoaders } from '../scene/loaders';
 import type { PreviewView } from '../scene/picking';
 import { SceneRuntime, type RuntimeSummary } from '../scene/runtime';
 import { describeProblems, describeSummary } from '../scene/summaryText';
-import { arrangeItems, SCENE_LAYOUTS, type SceneLayout } from '../scene/layouts';
+import { arrangeItems, SCENE_LAYOUTS, type SceneLayout, type LayoutOptions } from '../scene/layouts';
+import { SCENE_MOTIONS, type SceneMotion } from '../scene/motion';
+import { Box3, Vector3 } from 'three';
 import {
   MAX_CAROUSEL_SLIDES,
   MAX_ITEMS_PER_PROJECT,
   MAX_ITEM_FILE_BYTES,
+  defaultTransform,
   type ProjectRecord,
   type SceneItem,
 } from '../storage/model';
@@ -61,6 +64,11 @@ export const editorView: View = (context, root) => {
   let fine = false;
   let gridSnap = false;
   let layoutOriginal: SceneItem[] | null = null;
+  let layoutSpacing = 1;
+  let layoutOrientation: LayoutOptions['orientation'] = 'keep';
+  let motionScope: 'all' | 'selected' = 'all';
+  let motionSpeed = 1;
+  let section: 'objects' | 'layouts' | 'motion' | 'present' = 'objects';
   let layoutMusicOriginal: boolean | null = null;
   let presentationTimer: number | null = null;
   let presentationIndex = 0;
@@ -108,17 +116,42 @@ export const editorView: View = (context, root) => {
   }, icon(toolDetails[tool].icon), h('span', {}, toolDetails[tool].label)));
   const playButton = h('button', { class: 'btn btn-play', type: 'button', onclick: () => void togglePlay() }, 'Reproduzir prévia');
   const focusButton = h('button', { class: 'btn focus-camera', type: 'button', 'aria-label': 'Ver de perto a lembrança selecionada', title: 'Ver de perto', onclick: () => stage?.focusItem(selectedId) }, icon('center'), h('span', { class: 'focus-label' }, 'Ver de perto'));
+  const overviewButton = h('button', { class: 'btn', type: 'button', onclick: () => { stopPresentation(); runtime?.finishTransitions(); stage?.frameAll(); } }, icon('scan'), 'Ver tudo');
   const layoutBox = h('section', { class: 'card layout-box', 'aria-label': 'Formas de reunir lembranças' });
+  const motionBox = h('section', { class: 'card motion-box', 'aria-label': 'Movimento das lembranças' });
   const presentationBox = h('section', { class: 'card presentation-box', 'aria-label': 'Rever lembranças' });
   const musicBox = h('section', { class: 'card music-box', 'aria-label': 'Trilha para rever lembranças' });
   const projectSettings = h(
     'details',
     { class: 'project-settings' },
-    h('summary', {}, 'Layouts, apresentação e música'),
-    layoutBox,
+    h('summary', {}, 'Apresentação e música'),
     presentationBox,
     musicBox,
   );
+  const sectionButtons = (['objects', 'layouts', 'motion', 'present'] as const).map((id) => h('button', {
+    class: 'btn workspace-tab', type: 'button', role: 'tab', id: `tab-${id}`, 'aria-controls': `workspace-${id}`, 'aria-selected': String(section === id),
+    onclick: () => setSection(id),
+  }, id === 'objects' ? 'Ajustar' : id === 'layouts' ? 'Layouts' : id === 'motion' ? 'Movimentos' : 'Apresentar'));
+
+  function setSection(next: typeof section): void {
+    if (section === 'layouts' && next !== 'layouts' && layoutOriginal) cancelLayout();
+    section = next;
+    for (const [id, element] of [['objects', panel], ['layouts', layoutBox], ['motion', motionBox], ['present', projectSettings]] as const) {
+      element.id = `workspace-${id}`;
+      element.setAttribute('role', 'tabpanel');
+      element.setAttribute('aria-labelledby', `tab-${id}`);
+      element.hidden = id !== section;
+    }
+    if (next === 'present') projectSettings.open = true;
+    sectionButtons.forEach((button, i) => { const active = ['objects', 'layouts', 'motion', 'present'][i] === next; button.setAttribute('aria-selected', String(active)); button.tabIndex = active ? 0 : -1; });
+  }
+  sectionButtons.forEach((button, index) => button.addEventListener('keydown', (event) => {
+    if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? 3 : (index + (event.key === 'ArrowRight' ? 1 : 3)) % 4;
+    sectionButtons[next]!.click();
+    sectionButtons[next]!.focus();
+  }));
   const choiceBox = h('div', { class: 'choice-box', role: 'group', 'aria-label': 'Como adicionar as imagens' });
   choiceBox.hidden = true;
   const addConfirmBox = h('div', { class: 'add-confirm-box', role: 'group', 'aria-label': 'Confirmar adição de arquivos' });
@@ -155,6 +188,7 @@ export const editorView: View = (context, root) => {
 
   async function run(task: () => Promise<void>): Promise<void> {
     if (busy) return;
+    if (layoutOriginal) cancelLayout();
     busy = true;
     redrawAll();
     try {
@@ -192,6 +226,8 @@ export const editorView: View = (context, root) => {
   function beginEdit(): void {
     if (transactionOriginal) return;
     stopPresentation();
+    if (layoutOriginal) cancelLayout();
+    runtime?.finishTransitions();
     transactionOriginal = cloneItems(draft);
   }
 
@@ -223,6 +259,7 @@ export const editorView: View = (context, root) => {
 
   /** Volta (-1) ou refaz (+1). Só mexe em itens que ainda existem. */
   function stepHistory(direction: -1 | 1): void {
+    if (layoutOriginal) { cancelLayout(); return; }
     finishEdit();
     stopPresentation();
     const from = direction === -1 ? undoStack : redoStack;
@@ -240,8 +277,17 @@ export const editorView: View = (context, root) => {
   function replaceDraft(next: SceneItem): void {
     stopPresentation();
     remember();
-    draft = draft.map((item) => (item.id === next.id ? next : item));
     runtime?.updateItem(next);
+    const object = next.type !== 'audio' ? runtime?.rootOf(next.id) : null;
+    if (object) {
+      object.updateWorldMatrix(true, true);
+      const box = new Box3().setFromObject(object);
+      if (!box.isEmpty() && box.min.z < -0.00001) {
+        next = { ...next, transform: { ...next.transform, position: [next.transform.position[0], next.transform.position[1], next.transform.position[2] - box.min.z] } };
+        runtime?.updateItem(next);
+      }
+    }
+    draft = draft.map((item) => (item.id === next.id ? next : item));
     syncControls(next);
     redrawSaveBar();
     redrawList();
@@ -256,6 +302,7 @@ export const editorView: View = (context, root) => {
 
   async function saveDraft(): Promise<boolean> {
     if (!repo || !projectId) return false;
+    if (layoutOriginal) return false;
     const patches = diffItems(saved, draft);
     if (patches.size === 0) return true;
     const next = await updateItems(repo, projectId, patches);
@@ -283,13 +330,23 @@ export const editorView: View = (context, root) => {
   }
 
   async function togglePlay(): Promise<void> {
+    if (presentationTimer !== null) { stopPresentation(); return; }
+    runtime?.finishTransitions();
     playing = !playing;
     playButton.setAttribute('aria-pressed', String(playing));
     playButton.textContent = playing ? 'Pausar prévia' : 'Reproduzir prévia';
     await runtime?.setTracking(playing);
+    redrawMotionBox();
   }
 
   function stopPresentation(): void {
+    if (playing) {
+      playing = false;
+      playButton.setAttribute('aria-pressed', 'false');
+      playButton.textContent = 'Reproduzir prévia';
+      void runtime?.setTracking(false);
+      redrawMotionBox();
+    }
     const wasActive = presentationTimer !== null;
     if (presentationTimer !== null) window.clearInterval(presentationTimer);
     presentationTimer = null;
@@ -309,12 +366,15 @@ export const editorView: View = (context, root) => {
   function presentationStep(direction: 1 | -1): void {
     const items = presentationItems();
     if (items.length === 0) return;
+    const previous = items[presentationIndex];
+    if (playing && previous) void runtime?.setItemActive(previous.id, false);
     presentationIndex = (presentationIndex + direction + items.length) % items.length;
     const item = items[presentationIndex]!;
     presentationInternalSelect = true;
     selectItem(item.id);
     presentationInternalSelect = false;
     stage?.focusItem(item.id);
+    if (playing) void runtime?.setItemActive(item.id, true);
   }
 
   function startPresentation(): void {
@@ -327,15 +387,21 @@ export const editorView: View = (context, root) => {
       stopPresentation();
       return;
     }
+    stopPresentation();
     const selectedIndex = items.findIndex((item) => item.id === selectedId);
     presentationIndex = selectedIndex < 0 ? items.length - 1 : selectedIndex - 1;
     presentationBox.dataset.playing = 'true';
+    playing = true;
+    playButton.textContent = 'Pausar prévia';
+    playButton.setAttribute('aria-pressed', 'true');
+    runtime?.setMotionActive(true);
     presentationStep(1);
     presentationTimer = window.setInterval(() => presentationStep(1), presentationInterval);
     if (presentationMusicAttached) {
       if (presentationMusicId) {
         if (youtubePlaying) musicBox.querySelector('iframe')?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), 'https://www.youtube-nocookie.com');
         youtubePlaying = false;
+        localMusicPlaying = true;
         void runtime?.setItemActive(presentationMusicId, true);
         redrawMusicBox();
       }
@@ -345,6 +411,38 @@ export const editorView: View = (context, root) => {
       }
     }
     redrawPresentation();
+  }
+
+  function redrawMotionBox(): void {
+    const targets = draft.filter((item) => item.type !== 'audio' && item.visible && (motionScope === 'all' || item.id === selectedId));
+    const currentSpeed = targets.length > 0 && targets.every((item) => (item.options.motionSpeed ?? 1) === (targets[0]!.options.motionSpeed ?? 1)) ? targets[0]!.options.motionSpeed ?? 1 : motionSpeed;
+    motionBox.replaceChildren(
+      h('h2', { class: 'card-title' }, 'Dê movimento aos momentos'),
+      h('p', { class: 'muted' }, 'Escolha um percurso suave. O movimento também aparece na câmera depois de salvar e pausa quando você começa a editar.'),
+      h('label', { class: 'field-label' }, 'Aplicar em', h('select', { class: 'text-input', 'aria-label': 'Objetos que recebem movimento', onchange: (event: Event) => { motionScope = (event.target as HTMLSelectElement).value as typeof motionScope; redrawMotionBox(); } },
+        h('option', { value: 'all', selected: motionScope === 'all' }, 'Todas as lembranças visíveis'),
+        h('option', { value: 'selected', selected: motionScope === 'selected' }, 'Só a lembrança selecionada'))),
+      h('label', { class: 'field-label' }, 'Velocidade', h('select', { class: 'text-input', 'aria-label': 'Velocidade do movimento', onchange: (event: Event) => { motionSpeed = Number((event.target as HTMLSelectElement).value); applyMotion(); } },
+        ...[0.5, 1, 1.5].map((speed) => h('option', { value: speed, selected: speed === currentSpeed }, speed === 0.5 ? 'Tranquilo' : speed === 1 ? 'Normal' : 'Mais vivo')))),
+      h('div', { class: 'motion-options' }, ...SCENE_MOTIONS.map((motion) => h('button', { class: 'btn motion-option', type: 'button', disabled: busy || targets.length === 0, 'aria-pressed': String(targets.length > 0 && targets.every((item) => (item.options.motion ?? 'none') === motion.id)), onclick: () => { motionSpeed = currentSpeed; applyMotion(motion.id); } },
+        icon(motion.id === 'none' ? 'pause' : motion.id === 'orbit' ? 'rotate' : motion.id === 'float' ? 'up' : 'move'),
+        h('span', {}, h('strong', {}, motion.label), h('span', { class: 'muted' }, motion.description))))),
+      h('button', { class: 'btn', type: 'button', disabled: busy || targets.length === 0, onclick: () => void togglePlay() }, playing ? 'Pausar movimentos' : 'Experimentar movimentos'),
+      h('p', { class: 'muted' }, 'Use Salvar para manter a escolha. Se o aparelho pedir movimento reduzido, as lembranças ficam paradas.'),
+    );
+  }
+
+  function applyMotion(motion?: SceneMotion): void {
+    beginEdit();
+    draft = draft.map((item) => {
+      if (item.type === 'audio' || !item.visible || (motionScope === 'selected' && item.id !== selectedId)) return item;
+      const changed = { ...item, options: { ...item.options, motion: motion ?? item.options.motion ?? 'none', motionSpeed } };
+      runtime?.updateItem(changed);
+      return changed;
+    });
+    finishEdit();
+    if (draft.some((item) => item.visible && item.type !== 'audio' && item.options.motion && item.options.motion !== 'none')) void togglePlay();
+    redrawMotionBox();
   }
 
   function redrawPresentation(): void {
@@ -380,11 +478,22 @@ export const editorView: View = (context, root) => {
       layoutMusicOriginal = presentationMusicAttached;
     }
     const aspect = record?.anchor ? record.anchor.height / record.anchor.width : record?.referenceImage ? record.referenceImage.height / record.referenceImage.width : 0.75;
-    draft = arrangeItems(layoutOriginal, layout, aspect);
-    for (const item of draft) runtime?.updateItem(item);
+    const bounds = new Map<string, Box3>();
+    for (const item of layoutOriginal) {
+      const measured = runtime?.boundsFor(item.id, defaultTransform());
+      if (measured) bounds.set(item.id, measured);
+    }
+    draft = arrangeItems(layoutOriginal, layout, aspect, { spacing: layoutSpacing, orientation: layoutOrientation, bounds });
+    runtime?.transitionItems(draft);
+    stage?.frameAll();
     layoutBox.replaceChildren(
       h('h2', { class: 'card-title' }, `Prévia: ${SCENE_LAYOUTS.find((entry) => entry.id === layout)?.label ?? 'Disposição'}`),
       h('p', { class: 'muted' }, 'Suas lembranças e seus nomes continuam iguais. A disposição só muda quando você confirma e toca em Salvar.'),
+      h('label', { class: 'field-label' }, 'Espaçamento', h('select', { class: 'text-input', 'aria-label': 'Espaçamento do layout', onchange: (event: Event) => { layoutSpacing = Number((event.target as HTMLSelectElement).value); previewLayout(layout); } }, ...[0.75, 1, 1.15].map((spacing) => h('option', { value: spacing, selected: spacing === layoutSpacing }, spacing === 0.75 ? 'Mais juntinhos' : spacing === 1 ? 'Equilibrado' : 'Mais espaço')))),
+      h('label', { class: 'field-label' }, 'Como os objetos ficam', h('select', { class: 'text-input', 'aria-label': 'Orientação do layout', onchange: (event: Event) => { layoutOrientation = (event.target as HTMLSelectElement).value as typeof layoutOrientation; previewLayout(layout); } },
+        h('option', { value: 'keep', selected: layoutOrientation === 'keep' }, 'Manter a inclinação atual'),
+        h('option', { value: 'upright', selected: layoutOrientation === 'upright' }, 'Em pé sobre a tatuagem'),
+        h('option', { value: 'flat', selected: layoutOrientation === 'flat' }, 'Deitados sobre a tatuagem'))),
       checkbox('Tocar a trilha escolhida ao rever as lembranças', presentationMusicAttached, (value) => { presentationMusicAttached = value; previewLayout(layout); }),
       h('div', { class: 'row' },
         h('button', { class: 'btn btn-primary', type: 'button', onclick: confirmLayout }, 'Usar esta disposição'),
@@ -412,7 +521,8 @@ export const editorView: View = (context, root) => {
   function cancelLayout(): void {
     if (layoutOriginal) {
       draft = cloneItems(layoutOriginal);
-      for (const item of draft) runtime?.updateItem(item);
+      runtime?.transitionItems(draft);
+      stage?.frameAll();
     }
     layoutOriginal = null;
     if (layoutMusicOriginal !== null) presentationMusicAttached = layoutMusicOriginal;
@@ -428,8 +538,9 @@ export const editorView: View = (context, root) => {
     layoutBox.replaceChildren(
       h('h2', { class: 'card-title' }, 'Formas de reunir suas lembranças'),
       h('p', { class: 'muted' }, 'Escolha como quer reunir seus momentos. Experimente na prévia; para percorrer um por um, comece a rever.'),
+      ...presentationItems().length < 2 ? [h('p', { class: 'muted' }, 'Adicione pelo menos duas lembranças visuais para experimentar os layouts.')] : [],
       h('div', { class: 'layout-options' }, ...SCENE_LAYOUTS.map((layout) =>
-        h('button', { class: 'btn layout-option', type: 'button', onclick: () => previewLayout(layout.id) },
+        h('button', { class: 'btn layout-option', type: 'button', disabled: busy || presentationItems().length < 2, onclick: () => previewLayout(layout.id) },
           h('span', { class: `layout-thumb layout-thumb-${layout.id}`, 'aria-hidden': 'true' }, ...Array.from({ length: 5 }, () => h('i'))),
           h('span', { class: 'layout-copy' }, h('strong', {}, layout.label), h('span', { class: 'layout-description' }, layout.description)),
         ),
@@ -644,13 +755,25 @@ export const editorView: View = (context, root) => {
       for (const file of files) {
         try {
           const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|avif)$/i.test(file.name);
+          let dimensions: { width: number; height: number } | undefined;
+          if (isImage && typeof createImageBitmap === 'function') {
+            try {
+              const bitmap = await createImageBitmap(file);
+              dimensions = { width: bitmap.width, height: bitmap.height };
+              bitmap.close();
+            } catch { /* O carregador mostrará o erro caso o formato não seja legível. */ }
+          }
           const result = await addItem(repo, projectId, {
-            file: { data: await file.arrayBuffer(), fileName: file.name, mimeType: file.type },
+            file: { data: await file.arrayBuffer(), fileName: file.name, mimeType: file.type, ...dimensions },
             transform: { position: [0, 0, 0], ...(isImage ? { rotation: [90, 0, 0] as [number, number, number] } : {}) },
           });
           loadFromRecord(result.record);
           selectedId = result.item.id;
-          void runtime.add(cloneItems([result.item])[0]!);
+          await runtime.add(cloneItems([result.item])[0]!);
+          if (!disposed) {
+            placeAddedItem(result.item);
+            await saveDraft();
+          }
         } catch (error) {
           errors.push(`${file.name}: ${describeError(error)}`);
         }
@@ -658,6 +781,43 @@ export const editorView: View = (context, root) => {
       confirmingRemove = false;
       if (errors.length > 0) say(errors.join('\n'), 'error');
     });
+  }
+
+  /** Use a geometria carregada para apoiar o novo conteúdo e procurar um lugar livre. */
+  function placeAddedItem(item: SceneItem): void {
+    if (item.type === 'audio' || !runtime) return;
+    const object = runtime.rootOf(item.id);
+    if (!object) return;
+    object.updateWorldMatrix(true, true);
+    let bounds = new Box3().setFromObject(object);
+    if (bounds.isEmpty()) return;
+    const aspect = record?.anchor ? record.anchor.height / record.anchor.width : record?.referenceImage ? record.referenceImage.height / record.referenceImage.width : 0.75;
+    const size = bounds.getSize(new Vector3());
+    const fit = Math.min(1, 0.85 / Math.max(size.x, 0.001), aspect * 0.85 / Math.max(size.y, 0.001));
+    let next = { ...item, transform: { ...item.transform, scale: item.transform.scale * fit } };
+    runtime.updateItem(next);
+    object.updateWorldMatrix(true, true);
+    bounds = new Box3().setFromObject(object);
+    const base = object.position.clone();
+    const lift = Math.max(0, -bounds.min.z);
+    bounds.translate(new Vector3(0, 0, lift));
+    const occupied = draft.filter((other) => other.id !== item.id && other.visible && other.type !== 'audio').flatMap((other) => {
+      const root = runtime!.rootOf(other.id);
+      if (!root) return [];
+      root.updateWorldMatrix(true, true);
+      const box = new Box3().setFromObject(root);
+      return box.isEmpty() ? [] : [box.expandByScalar(0.015)];
+    });
+    const candidates: Vector3[] = [];
+    for (let row = -4; row <= 4; row++) for (let col = -4; col <= 4; col++) candidates.push(new Vector3(col * 0.1, row * aspect * 0.1, 0));
+    candidates.sort((a, b) => a.lengthSq() - b.lengthSq());
+    const position = candidates.find((offset) => {
+      const candidate = bounds.clone().translate(offset);
+      return candidate.min.x >= -0.5 && candidate.max.x <= 0.5 && candidate.min.y >= -aspect / 2 && candidate.max.y <= aspect / 2 && occupied.every((box) => !box.intersectsBox(candidate));
+    }) ?? new Vector3();
+    next = { ...next, transform: { ...next.transform, position: [base.x + position.x, base.y + position.y, base.z + lift] } };
+    draft = draft.map((current) => current.id === item.id ? next : current);
+    runtime.updateItem(next);
   }
 
   async function readFiles(files: File[]): Promise<Array<{ data: ArrayBuffer; fileName: string; mimeType: string }>> {
@@ -842,9 +1002,7 @@ export const editorView: View = (context, root) => {
       const next = applyControl(current, control, Number(input.value));
       input.style.setProperty('--fill', percentOf(control, control.read(next)));
       numeric.value = String(control.read(next)).replace('.', ',');
-      draft = draft.map((candidate) => (candidate.id === next.id ? next : candidate));
-      runtime?.updateItem(next);
-      redrawSaveBar();
+      replaceDraft(next);
     });
     input.addEventListener('pointerup', finishEdit);
     input.addEventListener('pointercancel', finishEdit);
@@ -952,6 +1110,18 @@ export const editorView: View = (context, root) => {
       quick('center', 'Centralizar', () => {
         const current = selected();
         if (current) replaceDraft(moveItem(current, 0, 0));
+      }),
+      quick('down', 'Apoiar na tatuagem', () => {
+        stopPresentation();
+        runtime?.finishTransitions();
+        const current = selected();
+        const object = current ? runtime?.rootOf(current.id) : null;
+        if (!current || !object) return;
+        object.updateWorldMatrix(true, true);
+        const box = new Box3().setFromObject(object);
+        if (box.isEmpty()) return;
+        replaceDraft({ ...current, transform: { ...current.transform, position: [current.transform.position[0], current.transform.position[1], current.transform.position[2] - box.min.z] } });
+        drawPanel();
       }),
       quick('align', 'Alinhar X', () => {
         const current = selected();
@@ -1243,6 +1413,8 @@ export const editorView: View = (context, root) => {
     redrawChoice();
     redrawPendingFiles();
     redrawPresentation();
+    redrawMotionBox();
+    redrawLayoutBox();
     for (const button of [frontButton, tiltedButton, focusButton, playButton]) button.disabled = busy;
     for (const button of toolButtons) button.disabled = busy || selected() === null;
     redrawHistory();
@@ -1259,6 +1431,7 @@ export const editorView: View = (context, root) => {
     for (const button of toolButtons) button.disabled = busy || id === null;
     redrawList();
     drawPanel();
+    redrawMotionBox();
   }
 
   // ------------------------------------------------------------------ carga
@@ -1337,6 +1510,7 @@ export const editorView: View = (context, root) => {
       referenceImage,
       getSelectedId: () => selectedId,
       getGridSnap: () => gridSnap,
+      getIsPlaying: () => playing,
       onSelect: (id) => selectItem(id),
       onDrag: (id, x, y) => {
         stopPresentation();
@@ -1414,7 +1588,7 @@ export const editorView: View = (context, root) => {
           h('div', { class: 'transform-toolbar', role: 'group', 'aria-label': 'Ferramentas de edição' }, ...toolButtons),
           toolHint,
           stageNote,
-          h('div', { class: 'stage-tools' }, h('div', { class: 'seg', role: 'group', 'aria-label': 'Ponto de vista da prévia' }, frontButton, tiltedButton), focusButton, playButton),
+          h('div', { class: 'stage-tools' }, h('div', { class: 'seg', role: 'group', 'aria-label': 'Ponto de vista da prévia' }, frontButton, tiltedButton), focusButton, overviewButton, playButton),
         ),
         h(
           'div',
@@ -1430,7 +1604,10 @@ export const editorView: View = (context, root) => {
             statusLine,
             problems,
           ),
+          h('nav', { class: 'workspace-tabs', role: 'tablist', 'aria-label': 'Organizar suas lembranças' }, ...sectionButtons),
           panel,
+          layoutBox,
+          motionBox,
           projectSettings,
           h(
             'details',
@@ -1465,6 +1642,7 @@ export const editorView: View = (context, root) => {
     redrawMusicBox();
     redrawPresentation();
     redrawAll();
+    setSection('objects');
   }
 
   void start();
@@ -1474,8 +1652,9 @@ export const editorView: View = (context, root) => {
     stopPresentation();
     pendingPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
     // Salva sozinho o que ficou pendente: o botão "voltar" do aparelho não pergunta nada.
-    if (repo && projectId && dirty()) {
-      const pending = diffItems(saved, draft);
+    const finalDraft = layoutOriginal ?? draft;
+    if (repo && projectId && isDirty(saved, finalDraft)) {
+      const pending = diffItems(saved, finalDraft);
       void updateItems(repo, projectId, pending)
         .then(() => context.toast('Ajustes da cena salvos.'))
         .catch(() => context.toast('Não foi possível salvar os últimos ajustes da cena.'));

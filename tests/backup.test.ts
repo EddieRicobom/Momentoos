@@ -562,7 +562,7 @@ describe('backup com itens da cena', () => {
       const { item } = await addItem(repo, project.id, {
         file: { data: signedBytes(mime, 300, i + 1), fileName },
         transform: { scale: 1 + i, position: [0.1 * i, 0, 0] },
-        options: { opacity: 0.5 + i / 10 },
+        options: { opacity: 0.5 + i / 10, ...(i === 0 ? { motion: 'float' as const, motionSpeed: 0.5 } : {}) },
       });
       items.push(item);
     }

@@ -74,7 +74,7 @@ function makeFake(type: ItemType, overrides: Partial<Fake> = {}): Fake {
   return fake;
 }
 
-function setup(items: SceneItem[], options: { fail?: Set<string>; fakes?: Map<string, Fake>; includeHidden?: boolean; open?: (id: string) => Promise<ArrayBuffer>; loaderDelay?: Map<string, Promise<void>> } = {}) {
+function setup(items: SceneItem[], options: { reducedMotion?: boolean; fail?: Set<string>; fakes?: Map<string, Fake>; includeHidden?: boolean; open?: (id: string) => Promise<ArrayBuffer>; loaderDelay?: Map<string, Promise<void>> } = {}) {
   const fakes = options.fakes ?? new Map<string, Fake>();
   const loader = (type: ItemType) => async (item: SceneItem): Promise<ItemController> => {
     await options.loaderDelay?.get(item.id);
@@ -96,6 +96,7 @@ function setup(items: SceneItem[], options: { fail?: Set<string>; fakes?: Map<st
     items,
     openFile: options.open ?? (async () => new ArrayBuffer(8)),
     loaders,
+    ...(options.reducedMotion !== undefined ? { reducedMotion: options.reducedMotion } : {}),
     ...(options.includeHidden !== undefined ? { includeHidden: options.includeHidden } : {}),
     onChange: (s) => changes.push(s),
   });
@@ -432,6 +433,79 @@ describe('SceneRuntime: edição de itens (add / remove / seleção)', () => {
     expect(scale.parent?.parent).toBe(rotation);
     expect(runtime.rotationOf('desconhecido')).toBeNull();
     expect(runtime.scaleNodeOf('desconhecido')).toBeNull();
+  });
+
+  it('movimenta na reprodução e restaura a posição ao pausar sem alterar o registro', async () => {
+    const item = makeItem('a');
+    item.options.motion = 'float';
+    const before = JSON.stringify(item);
+    const { runtime } = setup([item]);
+    await runtime.load();
+    await runtime.setTracking(true);
+    for (let i = 0; i < 20; i++) runtime.update(0.1);
+    expect(runtime.rootOf('a')!.position.z).toBeGreaterThan(0);
+    await runtime.setTracking(false);
+    expect(runtime.rootOf('a')!.position.toArray()).toEqual(item.transform.position);
+    expect(JSON.stringify(item)).toBe(before);
+    runtime.dispose();
+  });
+
+  it('permite apresentar os objetos sem ativar todos os áudios', async () => {
+    const item = makeItem('a');
+    item.options.motion = 'float';
+    const { runtime, fakes } = setup([item, makeItem('audio', 'audio')]);
+    await runtime.load();
+    runtime.setMotionActive(true);
+    runtime.update(0.1);
+    expect(runtime.rootOf('a')!.position.z).toBeGreaterThan(0);
+    expect(fakes.get('audio')!.active).toBeNull();
+    runtime.setMotionActive(false);
+    expect(runtime.rootOf('a')!.position.toArray()).toEqual(item.transform.position);
+    runtime.dispose();
+  });
+
+  it('movimento reduzido mantém a cena parada e aplica o layout sem transição', async () => {
+    const item = makeItem('a');
+    item.options.motion = 'orbit';
+    const { runtime } = setup([item], { reducedMotion: true });
+    await runtime.load();
+    await runtime.setTracking(true);
+    runtime.update(0.1);
+    expect(runtime.rootOf('a')!.position.toArray()).toEqual([0, 0, 0]);
+    runtime.transitionItems([{ ...item, transform: { ...item.transform, position: [0.3, 0, 0] } }]);
+    expect(runtime.rootOf('a')!.position.x).toBe(0.3);
+    runtime.dispose();
+  });
+
+  it('interpola o layout e interrompe a transição antes de um ajuste manual', async () => {
+    const item = makeItem('a');
+    const { runtime } = setup([item]);
+    await runtime.load();
+    runtime.transitionItems([{ ...item, transform: { ...item.transform, position: [0.4, 0, 0] } }]);
+    expect(runtime.rootOf('a')!.position.x).toBe(0);
+    runtime.update(0.1);
+    expect(runtime.rootOf('a')!.position.x).toBeGreaterThan(0);
+    expect(runtime.rootOf('a')!.position.x).toBeLessThan(0.4);
+    runtime.finishTransitions();
+    expect(runtime.rootOf('a')!.position.x).toBe(0.4);
+    runtime.updateItem({ ...item, transform: { ...item.transform, position: [-0.1, 0, 0] } });
+    runtime.update(0.1);
+    expect(runtime.rootOf('a')!.position.x).toBe(-0.1);
+    runtime.dispose();
+  });
+
+  it('mede a geometria em outra pose sem mudar a pose atual e apoia a rotação intermediária', async () => {
+    const item = makeItem('a');
+    const { runtime } = setup([item]);
+    await runtime.load();
+    const root = runtime.rootOf('a')!;
+    expect(runtime.boundsFor('a', { ...defaultTransform(), scale: 2 })!.getSize(new THREE.Vector3()).x).toBe(2);
+    expect(runtime.scaleNodeOf('a')!.scale.x).toBe(1);
+    runtime.transitionItems([{ ...item, transform: { ...item.transform, rotation: [90, 0, 0], position: [0, 0, 0.5] } }]);
+    runtime.update(0.1);
+    root.updateWorldMatrix(true, true);
+    expect(new THREE.Box3().setFromObject(root).min.z).toBeGreaterThanOrEqual(-1e-9);
+    runtime.dispose();
   });
 });
 

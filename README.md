@@ -15,7 +15,7 @@ tatuagem nunca sai do aparelho.
 | B | Câmera, compilação do alvo, demo de rastreamento | **Implementada, ainda NÃO validada em celular** |
 | C | Salvar projetos (IndexedDB), recarregar, exportar/importar ZIP | **Implementada, testada só com simulações; ainda NÃO validada em celular** |
 | D | Cena 3D ancorada com N itens (imagem, GIF, vídeo, GLB, áudio) e editor | **Implementada, testada só com simulações; nada disso rodou em navegador/celular reais** |
-| E | PWA offline, otimização, publicação | Não iniciada (há um fluxo de publicação manual, ainda não executado) |
+| E | PWA offline, otimização, publicação | Publicação manual no GitHub Pages configurada; offline ainda pendente |
 
 **O rastreamento em tatuagens reais NÃO está validado.** O que existe é o código
 da demonstração, que compila, passa nos testes automatizados e gera o build.
@@ -24,6 +24,23 @@ rodando o roteiro de [docs/TESTES-MANUAIS.md](docs/TESTES-MANUAIS.md) em um
 celular. Nenhum teste em navegador com câmera foi executado até agora.
 
 ## O que já funciona (no código)
+
+- **Organização por abas**: Ajustar, Layouts, Movimentos e Apresentar separam as
+  tarefas do editor. A tela inicial apresenta o caminho da foto até a câmera.
+- **Layouts com profundidade**: Mural, Arco, Composição livre, Roda e Escadinha
+  3D usam a quantidade de itens, as proporções e, quando carregados, os limites
+  reais da geometria para definir tamanho e distância. A prévia permite mudar
+  espaçamento e escolher manter a inclinação, deixar em pé ou deitar os itens.
+  Sair da aba ou do editor sem confirmar descarta somente a prévia do layout.
+- **Movimentos opcionais**: Flutuar, Passeio em 3D e Balanço suave podem ser
+  aplicados ao conjunto ou ao item selecionado, com três velocidades. Use
+  Reproduzir prévia para experimentar e Salvar para manter a escolha na câmera
+  e no backup. Editar pausa a reprodução; movimento reduzido mantém os objetos
+  parados. A animação é um deslocamento temporário, sem mudar a posição salva.
+- **Posicionamento assistido**: novos arquivos são medidos depois de carregar,
+  apoiados na tatuagem e colocados, quando há espaço, sem colidir com os outros.
+  Ver tudo enquadra a composição e Apoiar na tatuagem ajusta a altura do item.
+  Alterações manuais de posição, giro e escala evitam atravessar o plano da pele.
 
 - Escolher uma foto da galeria ou fotografar (o botão usa o atributo `capture`
   do HTML, que no Android costuma abrir o app de câmera; não testado em aparelho).

@@ -80,6 +80,9 @@ export const CAROUSEL_INTERVAL_MAX_MS = 60_000;
 export const CAROUSEL_INTERVAL_DEFAULT_MS = 3_000;
 
 export interface ItemOptions {
+  /** Movimento opcional do objeto; ausente em projetos antigos significa parado. */
+  motion?: 'none' | 'float' | 'orbit' | 'sway';
+  motionSpeed?: number;
   /** 0 a 1; vale para itens visuais. */
   opacity: number;
   /** Repetir (vídeo, áudio e animações do modelo). */
@@ -398,6 +401,8 @@ function validateOptions(o: unknown): string | null {
     return `intervalMs fora do intervalo ${CAROUSEL_INTERVAL_MIN_MS}–${CAROUSEL_INTERVAL_MAX_MS}.`;
   }
   if (typeof o.fade !== 'boolean') return 'fade inválido.';
+  if (o.motion !== undefined && !['none', 'float', 'orbit', 'sway'].includes(o.motion as string)) return 'movimento inválido.';
+  if (o.motionSpeed !== undefined && (!isFiniteNumber(o.motionSpeed) || o.motionSpeed < 0.25 || o.motionSpeed > 2)) return 'velocidade do movimento fora do intervalo 0,25–2.';
   return null;
 }
 

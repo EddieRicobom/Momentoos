@@ -247,7 +247,7 @@ export const projectsView: View = (context, root) => {
       } else if (mode === 'idle') {
         const main: HTMLElement[] = [];
         if (health.status === 'ready') {
-          main.push(h('button', { class: 'btn btn-primary', type: 'button', onclick: () => void guarded(open, 'Preparando suas lembranças…') }, 'Rever na câmera'));
+          main.push(h('button', { class: record.scene.items.length > 0 ? 'btn btn-primary' : 'btn', type: 'button', onclick: () => void guarded(open, 'Preparando suas lembranças…') }, 'Rever na câmera'));
         }
         if (offerRecompile && hasImage) {
           main.push(
@@ -262,7 +262,7 @@ export const projectsView: View = (context, root) => {
           h(
             'button',
             {
-              class: 'btn',
+              class: record.scene.items.length === 0 ? 'btn btn-primary' : 'btn',
               type: 'button',
               onclick: () => {
                 context.setEditingProject(record.id);
