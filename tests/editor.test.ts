@@ -236,10 +236,25 @@ describe('layouts e apresentação', () => {
     button(root, 'Layouts').click();
     (root.querySelector('.layout-option') as HTMLButtonElement).click();
     expect(root.textContent).toContain('Prévia: Mural');
+    expect(root.querySelector('.save-bar')?.textContent).toContain('Confirmar layout');
+    expect(root.querySelector('.save-bar')?.textContent).not.toContain('Salvar');
     button(root, 'Ajustar').click();
     expect(root.textContent).not.toContain('Alterações não salvas');
     cleanup();
     expect(await savedItems(repo, project.id)).toEqual(before);
+  });
+
+  it('centraliza o selecionado ao ativar os anéis e esconde as ferramentas na aba Layouts', async () => {
+    const repo = await freshRepository();
+    const { project, item } = await newProject(repo, true);
+    const { root, cleanup } = await mount(repo, project.id);
+    await ready(root);
+    (root.querySelector('button[data-tool="rotate"]') as HTMLButtonElement).click();
+    expect(stages.at(-1)!.focusItem).toHaveBeenLastCalledWith(item!.id);
+    expect(stages.at(-1)!.options.getShowTools()).toBe(true);
+    button(root, 'Layouts').click();
+    expect(stages.at(-1)!.options.getShowTools()).toBe(false);
+    cleanup();
   });
 
   it('confirma um layout, desfaz e refaz a disposição, e centraliza a câmera', async () => {
