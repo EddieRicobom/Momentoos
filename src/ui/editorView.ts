@@ -3,7 +3,8 @@ import { browserLoaders } from '../scene/loaders';
 import type { PreviewView } from '../scene/picking';
 import { SceneRuntime, type RuntimeSummary } from '../scene/runtime';
 import { describeProblems, describeSummary } from '../scene/summaryText';
-import { arrangeItems, SCENE_LAYOUTS, type SceneLayout, type LayoutOptions } from '../scene/layouts';
+import { arrangeItems, layoutSlots, SCENE_LAYOUTS, type SceneLayout, type LayoutOptions } from '../scene/layouts';
+import { spotPosition, TARGET_SPOTS, type TargetSpot } from '../scene/snapping';
 import { SCENE_MOTIONS, type SceneMotion } from '../scene/motion';
 import { Box3, Vector3 } from 'three';
 import {
@@ -65,6 +66,7 @@ export const editorView: View = (context, root) => {
   let fine = false;
   let gridSnap = false;
   let layoutOriginal: SceneItem[] | null = null;
+  let layoutActive: SceneLayout | null = null;
   let layoutSpacing = 1;
   let layoutOrientation: LayoutOptions['orientation'] = 'keep';
   let motionScope: 'all' | 'selected' = 'all';
@@ -81,6 +83,8 @@ export const editorView: View = (context, root) => {
   let youtubePlaying = false;
   let localMusicPlaying = false;
   const presentationItems = (): SceneItem[] => draft.filter((item) => item.visible && item.type !== 'audio');
+  /** Altura / largura do alvo (1 unidade = largura da tatuagem). */
+  const targetAspect = (): number => record?.anchor ? record.anchor.height / record.anchor.width : record?.referenceImage ? record.referenceImage.height / record.referenceImage.width : 0.75;
 
   const stageBox = h('div', { class: 'editor-stage' });
   const toolHint = h('span', { class: 'tool-hint', role: 'status' }, 'Arraste para mover; use dois dedos para girar e redimensionar.');
@@ -484,32 +488,70 @@ export const editorView: View = (context, root) => {
       layoutOriginal = cloneItems(draft);
       layoutMusicOriginal = presentationMusicAttached;
     }
-    const aspect = record?.anchor ? record.anchor.height / record.anchor.width : record?.referenceImage ? record.referenceImage.height / record.referenceImage.width : 0.75;
+    layoutActive = layout;
     const bounds = new Map<string, Box3>();
     for (const item of layoutOriginal) {
       const measured = runtime?.boundsFor(item.id, defaultTransform());
       if (measured) bounds.set(item.id, measured);
     }
-    draft = arrangeItems(layoutOriginal, layout, aspect, { spacing: layoutSpacing, orientation: layoutOrientation, bounds });
+    draft = arrangeItems(layoutOriginal, layout, targetAspect(), { spacing: layoutSpacing, orientation: layoutOrientation, bounds, focusId: selectedId ?? undefined });
     runtime?.transitionItems(draft);
     stage?.frameAll();
+    const info = SCENE_LAYOUTS.find((entry) => entry.id === layout);
+    const visual = layoutOriginal.filter((item) => item.visible && item.type !== 'audio');
+    const focusName = layout === 'focus' ? (visual.find((item) => item.id === selectedId) ?? visual[0])?.name : null;
     layoutBox.replaceChildren(
-      h('h2', { class: 'card-title' }, `Prévia: ${SCENE_LAYOUTS.find((entry) => entry.id === layout)?.label ?? 'Disposição'}`),
-      h('p', { class: 'muted' }, 'Suas lembranças e seus nomes continuam iguais. A disposição só muda quando você confirma e toca em Salvar.'),
-      h('label', { class: 'field-label' }, 'Espaçamento', h('select', { class: 'text-input', 'aria-label': 'Espaçamento do layout', onchange: (event: Event) => { layoutSpacing = Number((event.target as HTMLSelectElement).value); previewLayout(layout); } }, ...[0.75, 1, 1.15].map((spacing) => h('option', { value: spacing, selected: spacing === layoutSpacing }, spacing === 0.75 ? 'Mais juntinhos' : spacing === 1 ? 'Equilibrado' : 'Mais espaço')))),
-      h('label', { class: 'field-label' }, 'Como os objetos ficam', h('select', { class: 'text-input', 'aria-label': 'Orientação do layout', onchange: (event: Event) => { layoutOrientation = (event.target as HTMLSelectElement).value as typeof layoutOrientation; previewLayout(layout); } },
-        h('option', { value: 'keep', selected: layoutOrientation === 'keep' }, 'Manter a inclinação atual'),
-        h('option', { value: 'upright', selected: layoutOrientation === 'upright' }, 'Em pé sobre a tatuagem'),
-        h('option', { value: 'flat', selected: layoutOrientation === 'flat' }, 'Deitados sobre a tatuagem'))),
+      h('h2', { class: 'card-title' }, `Prévia: ${info?.label ?? 'Disposição'}`),
+      h('p', { class: 'muted' }, focusName
+        ? `“${focusName}” fica em destaque. Para trocar, selecione outra lembrança e toque em Destaque de novo.`
+        : 'Toque em outro modelo para comparar. Suas lembranças continuam iguais; a disposição só muda quando você confirma e toca em Salvar.'),
+      h('div', { class: 'layout-settings' },
+        h('label', { class: 'field-label' }, 'Espaçamento', h('select', { class: 'text-input', 'aria-label': 'Espaçamento do layout', onchange: (event: Event) => { layoutSpacing = Number((event.target as HTMLSelectElement).value); previewLayout(layout); } }, ...[0.75, 1, 1.15].map((spacing) => h('option', { value: spacing, selected: spacing === layoutSpacing }, spacing === 0.75 ? 'Mais juntinhos' : spacing === 1 ? 'Equilibrado' : 'Mais espaço')))),
+        h('label', { class: 'field-label' }, 'Como os objetos ficam', h('select', { class: 'text-input', 'aria-label': 'Orientação do layout', onchange: (event: Event) => { layoutOrientation = (event.target as HTMLSelectElement).value as typeof layoutOrientation; previewLayout(layout); } },
+          h('option', { value: 'keep', selected: layoutOrientation === 'keep' }, 'Manter a inclinação atual'),
+          h('option', { value: 'upright', selected: layoutOrientation === 'upright' }, 'Em pé sobre a tatuagem'),
+          h('option', { value: 'flat', selected: layoutOrientation === 'flat' }, 'Deitados sobre a tatuagem'))),
+      ),
       checkbox('Tocar a trilha escolhida ao rever as lembranças', presentationMusicAttached, (value) => { presentationMusicAttached = value; previewLayout(layout); }),
       h('div', { class: 'row' },
         h('button', { class: 'btn btn-primary', type: 'button', onclick: confirmLayout }, 'Usar esta disposição'),
         h('button', { class: 'btn', type: 'button', onclick: cancelLayout }, 'Voltar'),
       ),
+      layoutOptions(),
     );
     redrawList();
     drawPanel();
     redrawSaveBar();
+  }
+
+  /** Miniatura desenhada com o mesmo cálculo do layout, na proporção da tatuagem. */
+  function layoutThumb(layout: SceneLayout): HTMLElement {
+    const aspect = Math.min(1.4, Math.max(0.45, targetAspect()));
+    const count = Math.min(9, Math.max(layout === 'heart' ? 8 : 4, presentationItems().length));
+    const slots = [...layoutSlots(layout, count, aspect).entries()].sort(([, a], [, b]) => a.z - b.z);
+    const shapes = slots.map(([index, slot]) => {
+      // Nas grades a foto preenche a célula; nos demais, um quadrado cabe no círculo.
+      const grid = layout === 'gallery' || layout === 'cascade';
+      const width = grid ? slot.w * 1.7 : slot.r * 1.3;
+      const height = grid ? slot.h * 1.7 : slot.r * 1.3;
+      const opacity = Math.min(1, 0.55 + slot.z * 4).toFixed(2);
+      const transform = `translate(${slot.x.toFixed(4)} ${(-slot.y).toFixed(4)}) rotate(${(-slot.spin).toFixed(1)})`;
+      const strong = layout !== 'focus' || index === 0;
+      return `<rect x="${(-width / 2).toFixed(4)}" y="${(-height / 2).toFixed(4)}" width="${width.toFixed(4)}" height="${height.toFixed(4)}" rx="${(Math.min(width, height) * 0.18).toFixed(4)}" transform="${transform}" fill="currentColor" fill-opacity="${strong ? opacity : '0.45'}" stroke="#11171b" stroke-width="0.01"/>`;
+    }).join('');
+    const thumb = h('span', { class: 'layout-thumb', 'aria-hidden': 'true' });
+    thumb.innerHTML = `<svg viewBox="-0.56 ${(-aspect / 2 - 0.06).toFixed(4)} 1.12 ${(aspect + 0.12).toFixed(4)}" preserveAspectRatio="xMidYMid meet"><rect x="-0.5" y="${(-aspect / 2).toFixed(4)}" width="1" height="${aspect.toFixed(4)}" rx="0.04" fill="none" stroke="currentColor" stroke-opacity="0.3" stroke-width="0.014"/>${shapes}</svg>`;
+    return thumb;
+  }
+
+  function layoutOptions(): HTMLElement {
+    const disabled = busy || (layoutOriginal ?? draft).filter((item) => item.visible && item.type !== 'audio').length < 2;
+    return h('div', { class: 'layout-options', role: 'group', 'aria-label': 'Modelos de disposição' }, ...SCENE_LAYOUTS.map((layout) =>
+      h('button', { class: 'btn layout-option', type: 'button', disabled, 'aria-pressed': String(layoutActive === layout.id), onclick: () => previewLayout(layout.id) },
+        layoutThumb(layout.id),
+        h('span', { class: 'layout-copy' }, h('strong', {}, layout.label), h('span', { class: 'layout-description' }, layout.description)),
+      ),
+    ));
   }
 
   function confirmLayout(): void {
@@ -518,6 +560,7 @@ export const editorView: View = (context, root) => {
     if (undoStack.length > 80) undoStack.shift();
     redoStack = [];
     layoutOriginal = null;
+    layoutActive = null;
     layoutMusicOriginal = null;
     storeMusicChoice();
     redrawHistory();
@@ -532,6 +575,7 @@ export const editorView: View = (context, root) => {
       stage?.frameAll();
     }
     layoutOriginal = null;
+    layoutActive = null;
     if (layoutMusicOriginal !== null) presentationMusicAttached = layoutMusicOriginal;
     layoutMusicOriginal = null;
     redrawLayoutBox();
@@ -544,14 +588,9 @@ export const editorView: View = (context, root) => {
     if (layoutOriginal) return;
     layoutBox.replaceChildren(
       h('h2', { class: 'card-title' }, 'Formas de reunir suas lembranças'),
-      h('p', { class: 'muted' }, 'Escolha como quer reunir seus momentos. Experimente na prévia; para percorrer um por um, comece a rever.'),
+      h('p', { class: 'muted' }, 'Escolha um modelo para ver na prévia; dá para comparar vários antes de confirmar. Para percorrer um por um, use Apresentar.'),
       ...presentationItems().length < 2 ? [h('p', { class: 'muted' }, 'Adicione pelo menos duas lembranças visuais para experimentar os layouts.')] : [],
-      h('div', { class: 'layout-options' }, ...SCENE_LAYOUTS.map((layout) =>
-        h('button', { class: 'btn layout-option', type: 'button', disabled: busy || presentationItems().length < 2, onclick: () => previewLayout(layout.id) },
-          h('span', { class: `layout-thumb layout-thumb-${layout.id}`, 'aria-hidden': 'true' }, ...Array.from({ length: 5 }, () => h('i'))),
-          h('span', { class: 'layout-copy' }, h('strong', {}, layout.label), h('span', { class: 'layout-description' }, layout.description)),
-        ),
-      )),
+      layoutOptions(),
     );
   }
 
@@ -798,7 +837,7 @@ export const editorView: View = (context, root) => {
     object.updateWorldMatrix(true, true);
     let bounds = new Box3().setFromObject(object);
     if (bounds.isEmpty()) return;
-    const aspect = record?.anchor ? record.anchor.height / record.anchor.width : record?.referenceImage ? record.referenceImage.height / record.referenceImage.width : 0.75;
+    const aspect = targetAspect();
     const size = bounds.getSize(new Vector3());
     const fit = Math.min(1, 0.85 / Math.max(size.x, 0.001), aspect * 0.85 / Math.max(size.y, 0.001));
     let next = { ...item, transform: { ...item.transform, scale: item.transform.scale * fit } };
@@ -806,8 +845,6 @@ export const editorView: View = (context, root) => {
     object.updateWorldMatrix(true, true);
     bounds = new Box3().setFromObject(object);
     const base = object.position.clone();
-    const lift = Math.max(0, -bounds.min.z);
-    bounds.translate(new Vector3(0, 0, lift));
     const occupied = draft.filter((other) => other.id !== item.id && other.visible && other.type !== 'audio').flatMap((other) => {
       const root = runtime!.rootOf(other.id);
       if (!root) return [];
@@ -815,14 +852,30 @@ export const editorView: View = (context, root) => {
       const box = new Box3().setFromObject(root);
       return box.isEmpty() ? [] : [box.expandByScalar(0.015)];
     });
+    // Procura, do centro para fora, o lugar livre mais próximo; se não houver
+    // espaço, tenta de novo com o item um pouco menor antes de aceitar sobrepor.
     const candidates: Vector3[] = [];
-    for (let row = -4; row <= 4; row++) for (let col = -4; col <= 4; col++) candidates.push(new Vector3(col * 0.1, row * aspect * 0.1, 0));
+    for (let row = -10; row <= 10; row++) for (let col = -10; col <= 10; col++) candidates.push(new Vector3(col * 0.05, row * aspect * 0.05, 0));
     candidates.sort((a, b) => a.lengthSq() - b.lengthSq());
-    const position = candidates.find((offset) => {
-      const candidate = bounds.clone().translate(offset);
-      return candidate.min.x >= -0.5 && candidate.max.x <= 0.5 && candidate.min.y >= -aspect / 2 && candidate.max.y <= aspect / 2 && occupied.every((box) => !box.intersectsBox(candidate));
-    }) ?? new Vector3();
-    next = { ...next, transform: { ...next.transform, position: [base.x + position.x, base.y + position.y, base.z + lift] } };
+    let placed: { factor: number; lift: number; offset: Vector3 } | null = null;
+    for (const factor of [1, 0.8, 0.65, 0.5]) {
+      // O item encolhe em volta da própria origem, como faz a escala na cena.
+      const box = bounds.clone();
+      box.min.sub(base).multiplyScalar(factor).add(base);
+      box.max.sub(base).multiplyScalar(factor).add(base);
+      const lift = Math.max(0, -box.min.z);
+      box.translate(new Vector3(0, 0, lift));
+      const offset = candidates.find((candidateOffset) => {
+        const candidate = box.clone().translate(candidateOffset);
+        return candidate.min.x >= -0.5 && candidate.max.x <= 0.5 && candidate.min.y >= -aspect / 2 && candidate.max.y <= aspect / 2 && occupied.every((other) => !other.intersectsBox(candidate));
+      });
+      if (offset) {
+        placed = { factor, lift, offset };
+        break;
+      }
+    }
+    const { factor, lift, offset } = placed ?? { factor: 1, lift: Math.max(0, -bounds.min.z), offset: new Vector3() };
+    next = { ...next, transform: { ...next.transform, scale: next.transform.scale * factor, position: [base.x + offset.x, base.y + offset.y, base.z + lift] } };
     draft = draft.map((current) => current.id === item.id ? next : current);
     runtime.updateItem(next);
   }
@@ -1101,8 +1154,33 @@ export const editorView: View = (context, root) => {
         arrow('right', 'Mover para a direita', 1, 0),
         arrow('down', 'Mover para baixo', 0, -1),
       ),
-      h('div', { class: 'move-side' }, fineToggle, h('p', { class: 'muted' }, 'Arraste na prévia ou use as setas. O encaixe alinha ao alvo; a grade é opcional.')),
+      h('div', { class: 'move-side' }, fineToggle, h('p', { class: 'muted' }, 'Arraste na prévia ou use as setas. Ao arrastar, o item gruda no centro, nas bordas e no alinhamento das outras lembranças; a grade é opcional.')),
       checkbox('Encaixe em grade (5%)', gridSnap, (value) => { gridSnap = value; drawPanel(); }),
+    );
+  }
+
+  /** Leva o item selecionado a um dos nove pontos do alvo, respeitando o tamanho dele. */
+  function placeAtSpot(spot: TargetSpot): void {
+    stopPresentation();
+    runtime?.finishTransitions();
+    const current = selected();
+    if (!current || current.type === 'audio') return;
+    const measured = runtime?.boundsFor(current.id, current.transform);
+    const [px, py] = current.transform.position;
+    const halfW = 0.25 * current.transform.scale;
+    const box = measured
+      ? { minX: measured.min.x - px, maxX: measured.max.x - px, minY: measured.min.y - py, maxY: measured.max.y - py }
+      : { minX: -halfW, maxX: halfW, minY: -halfW, maxY: halfW };
+    const [x, y] = spotPosition(spot, box, targetAspect());
+    replaceDraft(moveItem(current, x, y));
+  }
+
+  function spotPicker(): HTMLElement {
+    return h('div', { class: 'spot-block' },
+      h('div', { class: 'spot-grid', role: 'group', 'aria-label': 'Posição rápida na tatuagem' }, ...TARGET_SPOTS.map((spot) =>
+        h('button', { class: 'btn spot-btn', type: 'button', 'aria-label': spot.label, title: spot.label, onclick: () => placeAtSpot(spot.id) }, h('i', { 'aria-hidden': 'true' })),
+      )),
+      h('div', { class: 'move-side' }, h('strong', { class: 'spot-title' }, 'Posição rápida'), h('p', { class: 'muted' }, 'Encoste a lembrança num canto, num lado ou no centro da tatuagem, sem passar da borda.')),
     );
   }
 
@@ -1114,10 +1192,6 @@ export const editorView: View = (context, root) => {
     return h(
       'div',
       { class: 'quick-row' },
-      quick('center', 'Centralizar', () => {
-        const current = selected();
-        if (current) replaceDraft(moveItem(current, 0, 0));
-      }),
       quick('down', 'Apoiar na tatuagem', () => {
         stopPresentation();
         runtime?.finishTransitions();
@@ -1132,12 +1206,12 @@ export const editorView: View = (context, root) => {
       }),
       quick('align', 'Alinhar X', () => {
         const current = selected();
-        const neighbor = draft.filter((candidate) => candidate.type !== 'audio' && candidate.id !== current?.id).sort((a, b) => Math.abs(a.transform.position[0] - current!.transform.position[0]) - Math.abs(b.transform.position[0] - current!.transform.position[0]))[0];
+        const neighbor = draft.filter((candidate) => candidate.type !== 'audio' && candidate.visible && candidate.id !== current?.id).sort((a, b) => Math.abs(a.transform.position[0] - current!.transform.position[0]) - Math.abs(b.transform.position[0] - current!.transform.position[0]))[0];
         if (current && neighbor) replaceDraft(moveItem(current, neighbor.transform.position[0], current.transform.position[1]));
       }),
       quick('alignY', 'Alinhar Y', () => {
         const current = selected();
-        const neighbor = draft.filter((candidate) => candidate.type !== 'audio' && candidate.id !== current?.id).sort((a, b) => Math.abs(a.transform.position[1] - current!.transform.position[1]) - Math.abs(b.transform.position[1] - current!.transform.position[1]))[0];
+        const neighbor = draft.filter((candidate) => candidate.type !== 'audio' && candidate.visible && candidate.id !== current?.id).sort((a, b) => Math.abs(a.transform.position[1] - current!.transform.position[1]) - Math.abs(b.transform.position[1] - current!.transform.position[1]))[0];
         if (current && neighbor) replaceDraft(moveItem(current, current.transform.position[0], neighbor.transform.position[1]));
       }),
       quick('rotateLeft', '−15°', () => {
@@ -1205,6 +1279,7 @@ export const editorView: View = (context, root) => {
       ),
       visual ? h('h3', { class: 'panel-subtitle' }, 'Posição') : null,
       visual ? moveBlock() : null,
+      visual ? spotPicker() : null,
       visual ? quickRow(item) : null,
       visual ? h('h3', { class: 'panel-subtitle' }, 'Tamanho e giro') : null,
       ...rows(['scale', 'rot-z']),
@@ -1527,6 +1602,7 @@ export const editorView: View = (context, root) => {
       referenceImage,
       getSelectedId: () => selectedId,
       getGridSnap: () => gridSnap,
+      getSnapIds: (id) => draft.filter((item) => item.id !== id && item.visible && item.type !== 'audio').map((item) => item.id),
       getIsPlaying: () => playing,
       getShowTools: () => section === 'objects',
       onSelect: (id) => selectItem(id),

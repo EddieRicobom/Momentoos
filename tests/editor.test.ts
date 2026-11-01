@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ItemController } from '../src/scene/types';
+import { SCENE_LAYOUTS } from '../src/scene/layouts';
 import { createProject } from '../src/storage/projects';
 import type { ProjectRepository } from '../src/storage/repository';
 import { addCarousel, addItem } from '../src/storage/scene';
@@ -266,9 +267,16 @@ describe('layouts e apresentação', () => {
     const before = (await savedItems(repo, project.id))[0]!;
     (root.querySelector('button[aria-label="Ver de perto a lembrança selecionada"]') as HTMLButtonElement).click();
     expect(stages.at(-1)?.focusItem).toHaveBeenCalledWith(before.id);
-    expect(root.textContent).toContain('Reúna várias lembranças e veja tudo de uma vez.');
-    (root.querySelector('.layout-option') as HTMLButtonElement).click();
+    expect(root.textContent).toContain('Grade equilibrada: todas do mesmo tamanho, aproveitando o espaço.');
+    expect(root.querySelectorAll('.layout-thumb svg rect').length).toBeGreaterThan(SCENE_LAYOUTS.length);
+    const option = (label: string): HTMLButtonElement => [...root.querySelectorAll<HTMLButtonElement>('.layout-option')].find((candidate) => candidate.textContent?.includes(label))!;
+    option('Coração').click();
+    expect(root.textContent).toMatch(/Prévia: Coração/);
+    // Os modelos continuam na tela durante a prévia, para comparar sem voltar.
+    option('Mural').click();
     expect(root.textContent).toMatch(/Prévia: Mural/);
+    expect(option('Mural').getAttribute('aria-pressed')).toBe('true');
+    expect(option('Coração').getAttribute('aria-pressed')).toBe('false');
     button(root, 'Usar esta disposição').click();
     expect(root.textContent).toMatch(/Alterações não salvas/);
     (root.querySelector('button[aria-label="Desfazer"]') as HTMLButtonElement).click();
@@ -477,10 +485,24 @@ describe('ajustar e salvar', () => {
     (root.querySelector('button[aria-label="Mover para a direita"]') as HTMLButtonElement).click();
     expect(x()).toBeCloseTo(0.012, 6);
 
-    button(root, 'Centralizar').click();
+    (root.querySelector('button[aria-label="No centro"]') as HTMLButtonElement).click();
     expect(x()).toBe(0);
     expect(y()).toBe(0);
     expect(root.querySelector('.save-bar')?.textContent).toMatch(/Tudo salvo/); // voltou ao que está salvo
+  });
+
+  it('a posição rápida encosta o item no canto sem passar da borda', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo, true);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    (root.querySelector('button[aria-label="Canto superior direito"]') as HTMLButtonElement).click();
+    const x = Number(slider(root, 'Posição horizontal').value);
+    const y = Number(slider(root, 'Posição vertical').value);
+    expect(x).toBeGreaterThan(0);
+    expect(y).toBeGreaterThan(0);
+    expect(x).toBeLessThan(0.5);
+    expect(root.querySelector('.save-bar')?.textContent).toMatch(/Alterações não salvas/);
   });
 
   it('os botões + e − mudam o tamanho em passos e respeitam os limites', async () => {

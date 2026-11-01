@@ -27,18 +27,29 @@ celular. Nenhum teste em navegador com câmera foi executado até agora.
 
 - **Organização por abas**: Ajustar, Layouts, Movimentos e Apresentar separam as
   tarefas do editor. A tela inicial apresenta o caminho da foto até a câmera.
-- **Layouts com profundidade**: Mural, Arco, Composição livre, Roda e Escadinha
-  3D usam a quantidade de itens, as proporções e, quando carregados, os limites
-  reais da geometria para definir tamanho e distância. A prévia permite mudar
-  espaçamento e escolher manter a inclinação, deixar em pé ou deitar os itens.
-  Sair da aba ou do editor sem confirmar descarta somente a prévia do layout.
+- **Dez modelos de disposição**: Mural, Destaque, Linha do tempo, Arco, Roda,
+  Coração, Espiral, Pilha de fotos, Escadinha 3D e Composição livre. Cada modelo
+  calcula lugares que não se tocam (exceto a Pilha, que sobrepõe em alturas
+  diferentes) e amplia o conjunto ao máximo que cabe na tatuagem, esticando as
+  formas redondas em alvos deitados ou em pé. O Mural escolhe o número de
+  colunas que dá itens maiores, divide as fileiras por igual e molda as células
+  à proporção das fotos. O Destaque põe a lembrança selecionada no centro, maior.
+  As miniaturas dos cartões são desenhadas com o mesmo cálculo, na proporção da
+  tatuagem; durante a prévia os cartões continuam visíveis para comparar.
+  A prévia permite mudar espaçamento e escolher manter a inclinação, deixar em
+  pé ou deitar os itens. Sair da aba ou do editor sem confirmar descarta somente
+  a prévia do layout.
 - **Movimentos opcionais**: Flutuar, Passeio em 3D e Balanço suave podem ser
   aplicados ao conjunto ou ao item selecionado, com três velocidades. Use
   Reproduzir prévia para experimentar e Salvar para manter a escolha na câmera
   e no backup. Editar pausa a reprodução; movimento reduzido mantém os objetos
   parados. A animação é um deslocamento temporário, sem mudar a posição salva.
 - **Posicionamento assistido**: novos arquivos são medidos depois de carregar,
-  apoiados na tatuagem e colocados, quando há espaço, sem colidir com os outros.
+  apoiados na tatuagem e colocados no lugar livre mais próximo do centro; sem
+  espaço, o item encolhe um pouco antes de aceitar sobrepor. Ao arrastar, a
+  caixa do item gruda no centro do alvo, encosta nas bordas e se alinha às
+  outras lembranças (centros e bordas), com guias tracejadas. A Posição rápida
+  (3×3) encosta o item num canto, lado ou no centro sem passar da borda.
   Ver tudo enquadra a composição e Apoiar na tatuagem ajusta a altura do item.
   Alterações manuais de posição, giro e escala evitam atravessar o plano da pele.
 
@@ -90,8 +101,8 @@ Etapa D (cena 3D ancorada):
   (afastando ou aproximando os dedos).
 - **Prévia antes de adicionar**: os arquivos não são gravados até confirmar; a
   tela mostra uma miniatura e a posição inicial no alvo. É possível cancelar.
-- **Formas de reunir lembranças**: Mural, Arco, Composição livre e Roda de lembranças
-  reorganizam os conteúdos visuais e preservam arquivos e nomes. A prévia pode ser
+- **Formas de reunir lembranças**: os dez modelos de disposição (Mural, Destaque,
+  Coração, Pilha de fotos e outros) reorganizam os conteúdos visuais e preservam arquivos e nomes. A prévia pode ser
   confirmada, cancelada ou desfeita. A Roda organiza os conteúdos; "Rever lembranças"
   inicia a apresentação automática separadamente.
 - **Rever lembranças**: iniciar, pausar, avançar, voltar e escolher intervalos de 2 a
