@@ -260,7 +260,7 @@ Nada disto foi medido em aparelho real. Anote aparelho, navegador e luz.
 | 12.5 | Editor: a prévia fica fixa no topo enquanto você rola os controles. | Dá para ajustar tamanho/giro vendo o resultado. |
 | 12.6 | Arraste um item perto do centro e das bordas do alvo. | Ele gruda; a cruz do centro acende; vibração curta (Android). |
 | 12.7 | Setas: toque e segure; ligue "Passo fino". | Move 1% por passo (0,2% no fino) e repete ao segurar. |
-| 12.8 | Botões +/− de Tamanho e Giro, "Centralizar", "−15°/+15°", "100%". | Cada um faz só o que diz. |
+| 12.8 | Botões +/− de Tamanho e Giro, Posição rápida (centro), "−15°/+15°", "100%". | Cada um faz só o que diz. |
 | 12.9 | Desfazer/refazer (setas no topo) depois de arrastar e de mexer em sliders. | Cada gesto contínuo volta de uma vez; um ajuste novo depois de desfazer apaga o "refazer". |
 | 12.10 | Use o app com uma mão no celular: alcança os botões principais? | Anote o que ficou difícil de alcançar. |
 
@@ -302,7 +302,9 @@ Os testes automatizados usam geometria e DOM simulados e não substituem este ro
 | # | Ação | Resultado esperado |
 |---|---|---|
 | 13.1 | Adicione um retrato alto e uma foto horizontal, depois um GLB. | As proporções se mantêm; o novo item é apoiado na tatuagem. Havendo espaço, ele aparece fora dos limites dos demais. |
-| 13.2 | Abra Layouts e experimente os cinco cartões, inclusive Escadinha 3D. | Os objetos mudam de lugar suavemente e a câmera enquadra a composição. A escadinha tem alturas diferentes. |
+| 13.2 | Abra Layouts e experimente os dez cartões, inclusive Escadinha 3D, Coração e Pilha de fotos, sem voltar entre um e outro. | As miniaturas parecem com o resultado. Os objetos mudam de lugar suavemente e a câmera enquadra a composição. Só a Pilha sobrepõe itens (em alturas diferentes); a escadinha tem alturas diferentes. |
+| 13.2b | Selecione uma lembrança e escolha Destaque; troque a seleção e toque em Destaque de novo. | A lembrança selecionada fica no centro, maior, e as outras ao redor. |
+| 13.2c | No Mural, use só fotos horizontais e depois só retratos. | As células seguem a proporção das fotos; fileiras incompletas ficam equilibradas e centralizadas. |
 | 13.3 | Mude o espaçamento e alterne entre manter inclinação, em pé e deitados. | Cada variação parte da disposição anterior à prévia; não encolhe repetidamente os itens. Nomes, arquivos, áudio e itens ocultos permanecem intactos. |
 | 13.4 | Durante uma prévia, volte para Ajustar ou saia do editor sem confirmar. | A disposição da prévia não é salva; ajustes anteriores a ela permanecem. |
 | 13.5 | Confirme um layout, desfaça e refaça. Salve e reabra. | Um passo do histórico restaura o conjunto. A posição confirmada é mantida ao reabrir. |
@@ -310,5 +312,6 @@ Os testes automatizados usam geometria e DOM simulados e não substituem este ro
 | 13.7 | Aplique o movimento só ao selecionado, salve, exporte e importe o backup. | Somente o item escolhido se move; a escolha e a velocidade permanecem no backup e aparecem na câmera quando a tatuagem é reconhecida. |
 | 13.8 | Durante a reprodução, comece a ajustar um item. | Movimento e apresentação pausam; o item volta à posição de edição e o gizmo corresponde aos números do painel. |
 | 13.9 | Ative reduzir movimento no sistema. Repita a prévia e a apresentação. | Os percursos dos objetos ficam desativados e as mudanças de layout/câmera são imediatas. |
+| 13.10b | Em Ajustar, use os nove botões da Posição rápida com um item grande e com um pequeno. Arraste um item perto da borda e perto de outro item. | O item encosta no ponto escolhido sem passar da borda. Ao arrastar, ele gruda na borda (pela borda do item) e se alinha ao vizinho, com guia tracejada. |
 | 13.10 | Gire e aumente um objeto em pé, inclusive com gestos de dois dedos. Use Apoiar na tatuagem e Ver tudo. | O objeto não entra no plano da pele; apoiar usa o limite real inferior e Ver tudo mostra a composição inteira. |
 | 13.11 | Use Tab e as setas nas quatro abas, e depois toque nelas no celular. | Só o painel ativo aparece, foco e rótulos são claros e todos os botões continuam acessíveis. |

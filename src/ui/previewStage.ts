@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GestureTracker } from '../scene/gestures';
 import { cameraPose, clampPositionToTarget, rayHitsPlane, type Point, type PreviewView } from '../scene/picking';
-import { snapAngle, snapPosition } from '../scene/snapping';
+import { snapAngle, snapBox, type BoxSnap, type SnapBox } from '../scene/snapping';
 import type { SceneRuntime } from '../scene/runtime';
 
 /**
@@ -24,6 +24,8 @@ export interface PreviewStageOptions {
   referenceImage: Blob | null;
   getSelectedId(): string | null;
   getGridSnap(): boolean;
+  /** Itens com que o item arrastado pode se alinhar (visíveis, exceto ele). */
+  getSnapIds?(id: string): string[];
   getIsPlaying?(): boolean;
   getShowTools?(): boolean;
   onSelect(id: string | null): void;
@@ -79,12 +81,17 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
   let gizmoItemId: string | null = null;
   let activeTool: PreviewTool = 'select';
   let scaleAtStart = 1;
+  let gizmoNeighbors: SnapBox[] = [];
   transformControls.addEventListener('mouseDown', () => {
     cameraMotion = null;
     if (activeTool === 'scale' && transformControls.object) scaleAtStart = transformControls.object.scale.x;
+    gizmoNeighbors = gizmoItemId ? neighborBoxes(gizmoItemId) : [];
     options.onManipulationStart();
   });
-  transformControls.addEventListener('mouseUp', () => options.onManipulationEnd());
+  transformControls.addEventListener('mouseUp', () => {
+    hideGuides();
+    options.onManipulationEnd();
+  });
   transformControls.addEventListener('objectChange', () => {
     const object = transformControls.object;
     if (!object || !gizmoItemId) return;
@@ -97,7 +104,8 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       const center = bounds.getCenter(new THREE.Vector3());
       const offsetX = center.x - root.position.x;
       const offsetY = center.y - root.position.y;
-      const snapped = snapPosition(root.position.x + offsetX, root.position.y + offsetY, targetAspect, undefined, options.getGridSnap());
+      const snapped = snapBox(root.position.x + offsetX, root.position.y + offsetY, size.x / 2, size.y / 2, targetAspect, gizmoNeighbors, undefined, options.getGridSnap());
+      showGuides(snapped);
       const [x, y] = clampPositionToTarget(snapped.x, snapped.y, size.x / 2, size.y / 2, targetAspect);
       root.position.x = x - offsetX;
       root.position.y = y - offsetY;
@@ -174,12 +182,28 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
   scene.add(cross);
   const outlineMaterial = outline.material as THREE.LineBasicMaterial;
 
+  // Guias de alinhamento (bordas do alvo e outros itens), uma por eixo.
+  const guideMaterial = new THREE.LineDashedMaterial({ color: ACCENT, dashSize: 0.02, gapSize: 0.012, transparent: true, opacity: 0.95 });
+  const guideX = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, -half * 1.1, 0.001), new THREE.Vector3(0, half * 1.1, 0.001)]), guideMaterial);
+  const guideY = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-0.55, 0, 0.001), new THREE.Vector3(0.55, 0, 0.001)]), guideMaterial);
+  for (const guide of [guideX, guideY]) {
+    guide.computeLineDistances();
+    guide.visible = false;
+    scene.add(guide);
+  }
+
   let wasSnapped = false;
-  const showGuides = (snappedX: boolean, snappedY: boolean, edge: boolean): void => {
-    const on = snappedX || snappedY;
-    crossMaterial.opacity = on ? 0.95 : 0.22;
-    crossMaterial.color.set(on ? ACCENT : 0xffffff);
-    outlineMaterial.color.set(edge ? 0xffffff : ACCENT);
+  const showGuides = (snap: Pick<BoxSnap, 'snappedX' | 'snappedY' | 'guideX' | 'guideY'> | null): void => {
+    const atCenter = snap !== null && (snap.guideX === 0 || snap.guideY === 0);
+    const atEdge = snap !== null && ((snap.guideX !== null && Math.abs(snap.guideX) === 0.5) || (snap.guideY !== null && Math.abs(snap.guideY) === half));
+    const on = snap !== null && (snap.snappedX || snap.snappedY);
+    crossMaterial.opacity = atCenter ? 0.95 : 0.22;
+    crossMaterial.color.set(atCenter ? ACCENT : 0xffffff);
+    outlineMaterial.color.set(atEdge ? 0xffffff : ACCENT);
+    guideX.visible = snap?.guideX != null && snap.guideX !== 0;
+    guideY.visible = snap?.guideY != null && snap.guideY !== 0;
+    if (snap?.guideX != null) guideX.position.x = snap.guideX;
+    if (snap?.guideY != null) guideY.position.y = snap.guideY;
     if (on && !wasSnapped) {
       try {
         navigator.vibrate?.(8);
@@ -189,7 +213,20 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
     }
     wasSnapped = on;
   };
-  const hideGuides = (): void => showGuides(false, false, false);
+  const hideGuides = (): void => showGuides(null);
+
+  /** Caixas dos outros itens no plano da pele, medidas uma vez no início do arrasto. */
+  function neighborBoxes(id: string): SnapBox[] {
+    const boxes: SnapBox[] = [];
+    for (const otherId of options.getSnapIds?.(id) ?? []) {
+      const root = runtime?.rootOf(otherId);
+      if (!root) continue;
+      root.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(root);
+      if (!box.isEmpty()) boxes.push({ minX: box.min.x, maxX: box.max.x, minY: box.min.y, maxY: box.max.y });
+    }
+    return boxes;
+  }
 
   function applyCamera(): void {
     const width = container.clientWidth || 1;
@@ -300,13 +337,15 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       const grabX = start[0] - root.position.x;
       const grabY = start[1] - root.position.y;
       const planeZ = root.position.z;
+      const neighbors = neighborBoxes(id);
       return (next) => {
         setRay(next);
         const hit = planeHit(planeZ);
         if (!hit) return;
-        const snap = snapPosition(hit[0] - grabX, hit[1] - grabY, targetAspect, undefined, options.getGridSnap());
-        const [safeX, safeY] = clampPositionToTarget(snap.x + boundsOffsetX, snap.y + boundsOffsetY, size.x / 2, size.y / 2, targetAspect);
-        showGuides(snap.snappedX && snap.x === 0, snap.snappedY && snap.y === 0, (snap.snappedX && snap.x !== 0) || (snap.snappedY && snap.y !== 0));
+        // O ímã olha a caixa inteira do item: centro, bordas e vizinhos.
+        const snap = snapBox(hit[0] - grabX + boundsOffsetX, hit[1] - grabY + boundsOffsetY, size.x / 2, size.y / 2, targetAspect, neighbors, undefined, options.getGridSnap());
+        const [safeX, safeY] = clampPositionToTarget(snap.x, snap.y, size.x / 2, size.y / 2, targetAspect);
+        showGuides(snap);
         options.onDrag(id, safeX - boundsOffsetX, safeY - boundsOffsetY);
       };
     },
@@ -314,7 +353,7 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
     rotationZ: options.getRotationZ,
     rotate(id, degrees) {
       const snap = snapAngle(degrees);
-      showGuides(snap.snapped, false, false);
+      showGuides({ snappedX: snap.snapped, snappedY: false, guideX: snap.snapped ? 0 : null, guideY: null });
       options.onRotate(id, snap.degrees);
     },
     scaleOf: options.getScale,
@@ -431,6 +470,9 @@ export function createPreviewStage(options: PreviewStageOptions): PreviewStage |
       backdropMaterial.dispose();
       backdropGeometry.dispose();
       outline.geometry.dispose();
+      guideX.geometry.dispose();
+      guideY.geometry.dispose();
+      guideMaterial.dispose();
       (outline.material as THREE.Material).dispose();
       selectionHelper.dispose();
       crossGeometry.dispose();
