@@ -102,12 +102,12 @@ export const settingsView: View = (context, root) => {
         h(
           'p',
           { class: 'muted' },
-          'Ainda não disponível: o modo offline (instalação como app) chega na Etapa E. Hoje o app precisa de internet para ser aberto. Depois de aberto, compilar o alvo e rastrear acontecem no aparelho, sem rede.',
+          'O app fica guardado neste aparelho depois da primeira visita completa. Nas próximas vezes, abre mesmo sem internet; as lembranças e a câmera continuam funcionando. Para instalar na tela inicial, use o menu do navegador (Android: “Instalar app”; iPhone: Compartilhar → Adicionar à Tela de Início). Com internet, o app busca a versão mais nova ao abrir.',
         ),
         h(
           'p',
           { class: 'muted' },
-          'Vídeos incorporados do YouTube (Etapa D) vão depender de internet e das regras do próprio YouTube.',
+          'Vídeos e músicas do YouTube continuam dependendo de internet e das regras do próprio YouTube.',
         ),
       ),
       h(

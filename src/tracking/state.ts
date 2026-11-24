@@ -169,11 +169,11 @@ function clampPercent(value: number): number {
 export function statusLabel(state: TrackingState): string {
   switch (state.status) {
     case 'idle':
-      return 'Nenhum alvo carregado';
+      return 'Nenhuma tatuagem aberta';
     case 'preparing-target':
-      return `Preparando imagem-alvo… ${Math.round(state.progress)}%`;
+      return `Preparando a tatuagem… ${Math.round(state.progress)}%`;
     case 'target-ready':
-      return 'Alvo pronto';
+      return 'Tatuagem pronta';
     case 'starting-camera':
       return 'Iniciando câmera e rastreador…';
     case 'searching':
@@ -187,7 +187,7 @@ export function statusLabel(state: TrackingState): string {
     case 'permission-denied':
       return 'Permissão da câmera negada';
     case 'error':
-      return 'Erro ao compilar ou carregar o alvo';
+      return 'Erro ao preparar a tatuagem';
   }
 }
 

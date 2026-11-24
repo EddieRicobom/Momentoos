@@ -16,3 +16,6 @@ private/
 Thumbs.db
 .idea/
 .vscode/
+
+# Capturas do laboratório de interface (não fazem parte do app)
+ui-shots/

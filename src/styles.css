@@ -303,6 +303,11 @@ label.btn {
   color: var(--muted);
 }
 
+.home-count {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
 .home-cta {
   width: 100%;
   min-height: 76px;
@@ -592,13 +597,23 @@ label.btn {
 }
 
 .hud-counters,
-.hud-hint {
+.hud-hint,
+.hud-project {
   margin: 0;
   padding: 7px 12px;
   border-radius: 12px;
   background: rgba(8, 10, 12, 0.72);
   backdrop-filter: blur(10px);
   font-size: 0.86rem;
+}
+
+.hud-project {
+  max-width: 100%;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
 }
 
 .hud-counters {
@@ -1073,6 +1088,65 @@ input[type='range']:disabled {
 .stage-tools > .seg { margin-right: auto; }
 .stage-tools > .btn { min-height: 44px; }
 
+/* Barra flutuante da lembrança selecionada: informações e ações sem sair da prévia. */
+.selection-bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(8, 10, 12, 0.86);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow);
+}
+
+.selection-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.selection-name {
+  font-weight: 650;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selection-metrics {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.selection-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.selection-action {
+  min-height: 38px;
+  padding: 0 4px;
+  gap: 4px;
+  border-radius: 10px;
+  font-size: 0.68rem;
+}
+
+.selection-action .icon {
+  width: 15px;
+  height: 15px;
+}
+
 .workspace-tabs {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1405,8 +1479,8 @@ input[type='range']:disabled {
 
 .spot-grid {
   display: grid;
-  grid-template-columns: repeat(3, 36px);
-  grid-template-rows: repeat(3, 28px);
+  grid-template-columns: repeat(3, 44px);
+  grid-template-rows: repeat(3, 36px);
   gap: 4px;
   padding: 6px;
   border: 1px solid var(--line-strong);
@@ -1419,10 +1493,10 @@ input[type='range']:disabled {
 
 .spot-btn {
   min-height: 0;
-  width: 36px;
-  height: 28px;
+  width: 44px;
+  height: 36px;
   padding: 0;
-  border-radius: 7px;
+  border-radius: 8px;
 }
 
 .spot-btn i {
@@ -1436,6 +1510,20 @@ input[type='range']:disabled {
 .spot-btn:focus-visible i,
 .spot-btn:active i {
   background: var(--accent);
+}
+
+.spot-btn[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.spot-btn[aria-pressed='true'] i {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.spot-now {
+  font-size: 0.76rem;
 }
 
 .spot-title {
@@ -1880,5 +1968,21 @@ input[type='range']:disabled {
     top: 54px;
     left: 9px;
     font-size: 0.68rem;
+  }
+
+  .selection-bar {
+    left: 6px;
+    right: 6px;
+    bottom: 6px;
+    padding: 7px 8px;
+  }
+
+  .selection-metrics {
+    font-size: 0.62rem;
+  }
+
+  .selection-action {
+    min-height: 36px;
+    font-size: 0.64rem;
   }
 }

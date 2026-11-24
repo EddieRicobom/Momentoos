@@ -38,7 +38,13 @@ export function checkCapabilities(): Capability[] {
       id: 'indexeddb',
       label: 'IndexedDB',
       ok: typeof indexedDB !== 'undefined',
-      detail: 'Será usado para guardar projetos no aparelho (Etapa C).',
+      detail: 'Guarda as lembranças e os arquivos neste aparelho.',
+    },
+    {
+      id: 'service-worker',
+      label: 'Modo offline (Service Worker)',
+      ok: typeof navigator !== 'undefined' && 'serviceWorker' in navigator,
+      detail: 'Guarda o app neste aparelho para abrir sem internet depois da primeira visita.',
     },
   ];
 }

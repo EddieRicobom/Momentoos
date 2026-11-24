@@ -6,7 +6,7 @@ import { describeProblems, describeSummary } from '../scene/summaryText';
 import type { SceneItem } from '../storage/model';
 import { openItemFile, openSlideFile } from '../storage/scene';
 import type { TrackingState } from '../tracking/state';
-import { statusChip } from './components';
+import { statusChip, topBar } from './components';
 import type { View } from './context';
 import { h } from './dom';
 
@@ -50,11 +50,17 @@ export const cameraView: View = (context, root) => {
       h(
         'main',
         { class: 'screen' },
+        topBar('Rever na câmera', () => context.navigate('home')),
         h('p', { class: 'muted' }, 'Nenhuma lembrança pronta para rever. Crie uma lembrança antes de abrir a câmera.'),
         h(
-          'button',
-          { class: 'btn btn-primary', type: 'button', onclick: () => context.navigate('create') },
-          'Criar uma lembrança',
+          'div',
+          { class: 'row' },
+          h(
+            'button',
+            { class: 'btn btn-primary', type: 'button', onclick: () => context.navigate('create') },
+            'Criar uma lembrança',
+          ),
+          h('button', { class: 'btn', type: 'button', onclick: () => context.navigate('projects') }, 'Minhas lembranças'),
         ),
       ),
     );
@@ -63,6 +69,7 @@ export const cameraView: View = (context, root) => {
 
   const chip = statusChip(store);
   const stage = h('div', { class: 'ar-stage' });
+  const projectLabel = h('p', { class: 'hud-project' }, target.label);
   const counters = h('p', { class: 'hud-counters' });
   const hint = h('p', { class: 'hud-hint' });
   const itemsLine = h('p', { class: 'hud-counters' });
@@ -338,6 +345,7 @@ export const cameraView: View = (context, root) => {
       h(
         'div',
         { class: 'hud' },
+        projectLabel,
         chip.element,
         counters,
         itemsLine,

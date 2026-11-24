@@ -72,6 +72,7 @@ vi.mock('../src/tracking/imagePrep', () => ({
 }));
 
 const { projectsView } = await import('../src/ui/projectsView');
+const { homeView } = await import('../src/ui/homeView');
 const { exportView } = await import('../src/ui/exportView');
 const { importView } = await import('../src/ui/importView');
 const { createView } = await import('../src/ui/createView');
@@ -169,6 +170,37 @@ async function addProject(repo: ProjectRepository, name: string, seed = 1) {
     now: new Date(`2026-10-0${seed}T10:00:00.000Z`),
   });
 }
+
+describe('início', () => {
+  it('sem lembranças, convida a criar e mostra a contagem', async () => {
+    const { root, navigations } = await mount(homeView);
+    await until(() => root.querySelector('.home-count')?.textContent?.includes('Nenhuma lembrança'));
+    expect(root.querySelector('.home-cta-title')?.textContent).toBe('Criar uma lembrança');
+    (root.querySelector('.home-cta') as HTMLButtonElement).click();
+    expect(navigations).toEqual(['create']);
+  });
+
+  it('com lembranças guardadas, a ação principal abre a lista', async () => {
+    const repo = await freshRepository();
+    await addProject(repo, 'Braço', 1);
+    const { root, navigations } = await mount(homeView, repo);
+    await until(() => root.querySelector('.home-cta-title')?.textContent === 'Abrir minhas lembranças');
+    expect(root.querySelector('.home-count')?.textContent).toContain('1 lembrança guardada');
+    (root.querySelector('.home-cta') as HTMLButtonElement).click();
+    expect(navigations).toEqual(['projects']);
+  });
+
+  it('com um alvo já carregado, a ação principal é rever na câmera', async () => {
+    const initial: AppTarget = {
+      buffer: makeMind(), width: 640, height: 480, origin: 'file', label: 'Braço',
+      previewUrl: null, compileMs: null, projectId: null, referenceImage: null,
+    };
+    const { root, navigations } = await mount(homeView, undefined, initial);
+    expect(root.querySelector('.home-cta-title')?.textContent).toBe('Rever na câmera');
+    (root.querySelector('.home-cta') as HTMLButtonElement).click();
+    expect(navigations).toEqual(['camera']);
+  });
+});
 
 describe('Minhas lembranças', () => {
   it('sem projetos, mostra o estado vazio com caminhos para criar ou importar', async () => {

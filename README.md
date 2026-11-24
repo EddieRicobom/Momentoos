@@ -15,7 +15,7 @@ tatuagem nunca sai do aparelho.
 | B | Câmera, compilação do alvo, demo de rastreamento | **Implementada, ainda NÃO validada em celular** |
 | C | Salvar projetos (IndexedDB), recarregar, exportar/importar ZIP | **Implementada, testada só com simulações; ainda NÃO validada em celular** |
 | D | Cena 3D ancorada com N itens (imagem, GIF, vídeo, GLB, áudio) e editor | **Implementada, testada só com simulações; nada disso rodou em navegador/celular reais** |
-| E | PWA offline, otimização, publicação | Publicação manual no GitHub Pages configurada; offline ainda pendente |
+| E | PWA offline, otimização, publicação | **Offline implementado e verificado no build em Chromium**; ainda não validado em celular |
 
 **O rastreamento em tatuagens reais NÃO está validado.** O que existe é o código
 da demonstração, que compila, passa nos testes automatizados e gera o build.
@@ -26,7 +26,15 @@ celular. Nenhum teste em navegador com câmera foi executado até agora.
 ## O que já funciona (no código)
 
 - **Organização por abas**: Ajustar, Layouts, Movimentos e Apresentar separam as
-  tarefas do editor. A tela inicial apresenta o caminho da foto até a câmera.
+  tarefas do editor. A tela inicial apresenta o caminho da foto até a câmera e
+  adapta a ação principal ao aparelho: criar na primeira vez, abrir as
+  lembranças salvas quando já existem, ou rever na câmera quando há uma tatuagem
+  aberta. Ela também mostra quantas lembranças estão guardadas.
+- **Offline**: depois da primeira visita completa, o service worker guarda o
+  app (e a versão dos arquivos do build) neste aparelho. Com internet, a tela
+  inicial busca a versão nova; sem internet, abre a última guardada. A câmera,
+  o rastreamento e as lembranças continuam locais. Verificado no build de
+  produção em Chromium com a rede desligada; falta validar em celular.
 - **Dez modelos de disposição**: Mural, Destaque, Linha do tempo, Arco, Roda,
   Coração, Espiral, Pilha de fotos, Escadinha 3D e Composição livre. Cada modelo
   calcula lugares que não se tocam (exceto a Pilha, que sobrepõe em alturas
@@ -49,9 +57,13 @@ celular. Nenhum teste em navegador com câmera foi executado até agora.
   espaço, o item encolhe um pouco antes de aceitar sobrepor. Ao arrastar, a
   caixa do item gruda no centro do alvo, encosta nas bordas e se alinha às
   outras lembranças (centros e bordas), com guias tracejadas. A Posição rápida
-  (3×3) encosta o item num canto, lado ou no centro sem passar da borda.
+  (3×3) encosta o item num canto, lado ou no centro sem passar da borda, e o
+  ponto aceso mostra onde ele está. Uma barra flutuante sobre a prévia mostra
+  nome, posição (X/Y) e tamanho da lembrança selecionada e oferece Centro,
+  Encaixar (o lugar livre mais próximo, encolhendo se precisar), Frente e Trás.
   Ver tudo enquadra a composição e Apoiar na tatuagem ajusta a altura do item.
   Alterações manuais de posição, giro e escala evitam atravessar o plano da pele.
+  No computador, as setas movem, Ctrl/Cmd+Z desfaz e Esc solta a seleção.
 
 - Escolher uma foto da galeria ou fotografar (o botão usa o atributo `capture`
   do HTML, que no Android costuma abrir o app de câmera; não testado em aparelho).
@@ -236,14 +248,15 @@ automática**; ela só acontece quando você dispara o fluxo manualmente:
 
 1. No GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 2. Aba **Actions → "Publicar no GitHub Pages" → Run workflow**.
-3. O endereço final será `https://eddiericobom.github.io/Momentoos/` (confirme
-   na própria página de Pages; o GitHub usa o nome do repositório).
+3. O endereço é `https://eddiericobom.github.io/Momentoos/`.
+
+Esse fluxo já foi executado e o app está publicado nesse endereço. Ele continua
+manual: um push na `main` não publica sozinho.
 
 O GitHub Pages serve HTTPS, que a câmera exige. O `base: './'` do Vite faz o
-build funcionar em qualquer subcaminho sem configuração.
-
-O fluxo (`.github/workflows/pages.yml`) **ainda não foi executado**. As versões
-das actions foram conferidas na documentação do GitHub, exceto `setup-node`.
+build funcionar em qualquer subcaminho sem configuração. O service worker
+(`public/sw.js`) guarda o app neste aparelho para abrir offline depois da
+primeira visita completa com internet.
 
 ## Como funciona
 
@@ -316,7 +329,13 @@ limitações: [docs/RASTREAMENTO.md](docs/RASTREAMENTO.md).
 - Cada vez que a tela da câmera é aberta e fechada, o MindARThree deixa um
   ouvinte de `resize` na janela (ele não expõe como removê-lo). Efeito pequeno,
   mas existe.
-- Sem modo offline ainda (Etapa E).
+- **Offline**: o service worker só entra em ação no build de produção publicado
+  (não no `npm run dev`). A primeira visita precisa ser online; atualizações
+  aparecem na próxima abertura com internet e podem demorar se o navegador
+  estiver com o app aberto. Limpar os dados do site apaga também o cache do app.
+- **PWA no iOS**: a instalação pela Tela de Início funciona, mas o iOS pode
+  limitar armazenamento e descartar dados; o backup em ZIP continua sendo a
+  proteção real.
 - **Cena 3D (Etapa D):** o MindAR trata a tatuagem como imagem plana, então os
   itens ficam presos a esse plano; não acompanham a deformação da pele.
 - Os itens se posicionam no sistema de coordenadas do **recorte** da tatuagem
@@ -408,6 +427,7 @@ src/
 tests/                    testes automatizados
 tools/detect-lab/         laboratório de detecção (Chromium headless; ver docs/DETECCAO.md)
 tools/ui-lab/             renderiza as telas reais num Chromium com projeto de exemplo (capturas de tela)
+public/                   service worker, manifesto e ícones do app (offline/PWA)
 docs/                     rastreamento, formato de backup e roteiro de testes manuais
 stubs/canvas/             pacote vazio que substitui o node-canvas
 ```

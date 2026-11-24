@@ -65,6 +65,9 @@ export const editorView: View = (context, root) => {
   /** Setas e botões +/−: passo pequeno. */
   let fine = false;
   let gridSnap = false;
+  /** Botões do mapa 3×3, atualizados durante o arrasto sem redesenhar o painel. */
+  const spotButtons = new Map<TargetSpot, HTMLButtonElement>();
+  let spotNow: HTMLElement | null = null;
   let layoutOriginal: SceneItem[] | null = null;
   let layoutActive: SceneLayout | null = null;
   let layoutSpacing = 1;
@@ -82,6 +85,7 @@ export const editorView: View = (context, root) => {
   let youtubeMusicUrl = '';
   let youtubePlaying = false;
   let localMusicPlaying = false;
+  let keyHandler: ((event: KeyboardEvent) => void) | null = null;
   const presentationItems = (): SceneItem[] => draft.filter((item) => item.visible && item.type !== 'audio');
   /** Altura / largura do alvo (1 unidade = largura da tatuagem). */
   const targetAspect = (): number => record?.anchor ? record.anchor.height / record.anchor.width : record?.referenceImage ? record.referenceImage.height / record.referenceImage.width : 0.75;
@@ -120,6 +124,23 @@ export const editorView: View = (context, root) => {
     onclick: () => setTool(tool),
   }, icon(toolDetails[tool].icon), h('span', {}, toolDetails[tool].label)));
   const transformToolbar = h('div', { class: 'transform-toolbar', role: 'group', 'aria-label': 'Ferramentas de edição' }, ...toolButtons);
+  const selectionName = h('span', { class: 'selection-name' });
+  const selectionMetrics = h('span', { class: 'selection-metrics' });
+  selectionMetrics.title = 'Centro da lembrança na tatuagem (horizontal · vertical) e largura em relação à tatuagem';
+  const selectionBar = h(
+    'div',
+    { class: 'selection-bar', role: 'group', 'aria-label': 'Ajustes rápidos da lembrança selecionada' },
+    h('div', { class: 'selection-head' }, selectionName, selectionMetrics),
+    h(
+      'div',
+      { class: 'selection-actions' },
+      h('button', { class: 'btn selection-action', type: 'button', 'aria-label': 'Centralizar na tatuagem', title: 'Colocar no centro da tatuagem', onclick: () => placeAtSpot('center') }, icon('center'), 'Centro'),
+      h('button', { class: 'btn selection-action', type: 'button', 'aria-label': 'Encaixar no espaço livre', title: 'Encontrar o lugar livre mais próximo, sem sobrepor as outras lembranças', onclick: () => fitSelectedToFreeSpot() }, icon('fit'), 'Encaixar'),
+      h('button', { class: 'btn selection-action', type: 'button', 'aria-label': 'Trazer para frente', title: 'Trazer esta lembrança para a frente das outras', onclick: () => moveLayer(1) }, icon('front'), 'Frente'),
+      h('button', { class: 'btn selection-action', type: 'button', 'aria-label': 'Enviar para trás', title: 'Enviar esta lembrança para trás das outras', onclick: () => moveLayer(-1) }, icon('sendBack'), 'Trás'),
+    ),
+  );
+  selectionBar.hidden = true;
   const playButton = h('button', { class: 'btn btn-play', type: 'button', onclick: () => void togglePlay() }, 'Reproduzir prévia');
   const focusButton = h('button', { class: 'btn focus-camera', type: 'button', 'aria-label': 'Ver de perto a lembrança selecionada', title: 'Ver de perto', onclick: () => stage?.focusItem(selectedId) }, icon('center'), h('span', { class: 'focus-label' }, 'Ver de perto'));
   const overviewButton = h('button', { class: 'btn', type: 'button', onclick: () => { stopPresentation(); runtime?.finishTransitions(); stage?.frameAll(); } }, icon('scan'), 'Ver tudo');
@@ -152,6 +173,7 @@ export const editorView: View = (context, root) => {
     }
     if (next === 'present') projectSettings.open = true;
     if (next === 'objects' && tool !== 'select') stage?.focusItem(selectedId);
+    updateSelectionBar();
     sectionButtons.forEach((button, i) => { const active = ['objects', 'layouts', 'motion', 'present'][i] === next; button.setAttribute('aria-selected', String(active)); button.tabIndex = active ? 0 : -1; });
   }
   sectionButtons.forEach((button, index) => button.addEventListener('keydown', (event) => {
@@ -298,6 +320,7 @@ export const editorView: View = (context, root) => {
     }
     draft = draft.map((item) => (item.id === next.id ? next : item));
     syncControls(next);
+    updateSelectionBar();
     redrawSaveBar();
     redrawList();
   }
@@ -842,40 +865,16 @@ export const editorView: View = (context, root) => {
     const fit = Math.min(1, 0.85 / Math.max(size.x, 0.001), aspect * 0.85 / Math.max(size.y, 0.001));
     let next = { ...item, transform: { ...item.transform, scale: item.transform.scale * fit } };
     runtime.updateItem(next);
-    object.updateWorldMatrix(true, true);
-    bounds = new Box3().setFromObject(object);
-    const base = object.position.clone();
-    const occupied = draft.filter((other) => other.id !== item.id && other.visible && other.type !== 'audio').flatMap((other) => {
-      const root = runtime!.rootOf(other.id);
-      if (!root) return [];
-      root.updateWorldMatrix(true, true);
-      const box = new Box3().setFromObject(root);
-      return box.isEmpty() ? [] : [box.expandByScalar(0.015)];
-    });
-    // Procura, do centro para fora, o lugar livre mais próximo; se não houver
-    // espaço, tenta de novo com o item um pouco menor antes de aceitar sobrepor.
-    const candidates: Vector3[] = [];
-    for (let row = -10; row <= 10; row++) for (let col = -10; col <= 10; col++) candidates.push(new Vector3(col * 0.05, row * aspect * 0.05, 0));
-    candidates.sort((a, b) => a.lengthSq() - b.lengthSq());
-    let placed: { factor: number; lift: number; offset: Vector3 } | null = null;
-    for (const factor of [1, 0.8, 0.65, 0.5]) {
-      // O item encolhe em volta da própria origem, como faz a escala na cena.
-      const box = bounds.clone();
-      box.min.sub(base).multiplyScalar(factor).add(base);
-      box.max.sub(base).multiplyScalar(factor).add(base);
-      const lift = Math.max(0, -box.min.z);
-      box.translate(new Vector3(0, 0, lift));
-      const offset = candidates.find((candidateOffset) => {
-        const candidate = box.clone().translate(candidateOffset);
-        return candidate.min.x >= -0.5 && candidate.max.x <= 0.5 && candidate.min.y >= -aspect / 2 && candidate.max.y <= aspect / 2 && occupied.every((other) => !other.intersectsBox(candidate));
-      });
-      if (offset) {
-        placed = { factor, lift, offset };
-        break;
-      }
-    }
-    const { factor, lift, offset } = placed ?? { factor: 1, lift: Math.max(0, -bounds.min.z), offset: new Vector3() };
-    next = { ...next, transform: { ...next.transform, scale: next.transform.scale * factor, position: [base.x + offset.x, base.y + offset.y, base.z + lift] } };
+    const spot = freeSpotFor(item, [1, 0.8, 0.65, 0.5]);
+    if (!spot) return;
+    next = {
+      ...next,
+      transform: {
+        ...next.transform,
+        scale: next.transform.scale * spot.factor,
+        position: [spot.base.x + spot.offset.x, spot.base.y + spot.offset.y, spot.base.z + spot.lift],
+      },
+    };
     draft = draft.map((current) => current.id === item.id ? next : current);
     runtime.updateItem(next);
   }
@@ -1159,29 +1158,180 @@ export const editorView: View = (context, root) => {
     );
   }
 
+  /** Caixa do item relativa à origem dele, no plano da pele (larguras do alvo). */
+  function itemBox(item: SceneItem): { minX: number; maxX: number; minY: number; maxY: number } {
+    const measured = runtime?.boundsFor(item.id, item.transform);
+    const [px, py] = item.transform.position;
+    const halfW = 0.25 * item.transform.scale;
+    return measured
+      ? { minX: measured.min.x - px, maxX: measured.max.x - px, minY: measured.min.y - py, maxY: measured.max.y - py }
+      : { minX: -halfW, maxX: halfW, minY: -halfW, maxY: halfW };
+  }
+
   /** Leva o item selecionado a um dos nove pontos do alvo, respeitando o tamanho dele. */
   function placeAtSpot(spot: TargetSpot): void {
     stopPresentation();
     runtime?.finishTransitions();
     const current = selected();
     if (!current || current.type === 'audio') return;
-    const measured = runtime?.boundsFor(current.id, current.transform);
-    const [px, py] = current.transform.position;
-    const halfW = 0.25 * current.transform.scale;
-    const box = measured
-      ? { minX: measured.min.x - px, maxX: measured.max.x - px, minY: measured.min.y - py, maxY: measured.max.y - py }
-      : { minX: -halfW, maxX: halfW, minY: -halfW, maxY: halfW };
-    const [x, y] = spotPosition(spot, box, targetAspect());
+    const [x, y] = spotPosition(spot, itemBox(current), targetAspect());
     replaceDraft(moveItem(current, x, y));
   }
 
+  /** Ponto rápido em que o item está exatamente agora (ou null, se estiver livre). */
+  function currentSpot(item: SceneItem): TargetSpot | null {
+    if (item.type === 'audio') return null;
+    const box = itemBox(item);
+    const [px, py] = item.transform.position;
+    let best: TargetSpot | null = null;
+    let bestDistance = 0.015;
+    for (const spot of TARGET_SPOTS) {
+      const [x, y] = spotPosition(spot.id, box, targetAspect());
+      const distance = Math.hypot(x - px, y - py);
+      if (distance <= bestDistance) {
+        best = spot.id;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  function updateSpotPicker(item: SceneItem | null): void {
+    const active = item ? currentSpot(item) : null;
+    for (const [id, button] of spotButtons) button.setAttribute('aria-pressed', String(id === active));
+    if (spotNow) spotNow.textContent = active
+      ? `Agora: ${TARGET_SPOTS.find((spot) => spot.id === active)?.label.toLowerCase()}.`
+      : 'Agora: posição livre.';
+  }
+
   function spotPicker(): HTMLElement {
+    spotButtons.clear();
+    spotNow = h('span', { class: 'muted spot-now' }, 'Agora: posição livre.');
+    const buttons = TARGET_SPOTS.map((spot) => {
+      const button = h('button', { class: 'btn spot-btn', type: 'button', 'aria-label': spot.label, title: spot.label, 'aria-pressed': 'false', onclick: () => placeAtSpot(spot.id) }, h('i', { 'aria-hidden': 'true' }));
+      spotButtons.set(spot.id, button);
+      return button;
+    });
     return h('div', { class: 'spot-block' },
-      h('div', { class: 'spot-grid', role: 'group', 'aria-label': 'Posição rápida na tatuagem' }, ...TARGET_SPOTS.map((spot) =>
-        h('button', { class: 'btn spot-btn', type: 'button', 'aria-label': spot.label, title: spot.label, onclick: () => placeAtSpot(spot.id) }, h('i', { 'aria-hidden': 'true' })),
-      )),
-      h('div', { class: 'move-side' }, h('strong', { class: 'spot-title' }, 'Posição rápida'), h('p', { class: 'muted' }, 'Encoste a lembrança num canto, num lado ou no centro da tatuagem, sem passar da borda.')),
+      h('div', { class: 'spot-grid', role: 'group', 'aria-label': 'Posição rápida na tatuagem' }, ...buttons),
+      h('div', { class: 'move-side' },
+        h('strong', { class: 'spot-title' }, 'Posição rápida'),
+        h('p', { class: 'muted' }, 'Encoste a lembrança num canto, num lado ou no centro da tatuagem, sem passar da borda. O ponto aceso mostra onde ela está.'),
+        spotNow),
     );
+  }
+
+  /** Progresso visual do item selecionado, sempre à mão logo abaixo da prévia. */
+  function updateSelectionBar(): void {
+    const item = selected();
+    const show = !busy && section === 'objects' && item !== null && item.type !== 'audio';
+    selectionBar.hidden = !show;
+    updateSpotPicker(item);
+    if (!show || !item) return;
+    selectionName.textContent = item.name;
+    const aspect = Math.max(0.1, targetAspect());
+    const measured = runtime?.boundsFor(item.id, item.transform) ?? null;
+    const [px, py] = item.transform.position;
+    let centerX = px + 0.25 * item.transform.scale;
+    let centerY = py;
+    let width = 0.5 * item.transform.scale;
+    if (measured) {
+      const center = measured.getCenter(new Vector3());
+      const size = measured.getSize(new Vector3());
+      centerX = center.x;
+      centerY = center.y;
+      width = size.x;
+    }
+    const horizontal = Math.round((centerX + 0.5) * 100);
+    const vertical = Math.round((0.5 - centerY / aspect) * 100);
+    selectionMetrics.textContent = `X ${Math.max(0, Math.min(100, horizontal))}% · Y ${Math.max(0, Math.min(100, vertical))}% · ${Math.round(width * 100)}% larg.`;
+  }
+
+  /** Aumenta (+1) ou diminui (−1) a altura do item sobre a pele, para ficar na frente ou atrás. */
+  function moveLayer(direction: 1 | -1): void {
+    const current = selected();
+    const z = CONTROLS.find((control) => control.id === 'pos-z');
+    if (!current || current.type === 'audio' || !z) return;
+    replaceDraft(applyControl(current, z, z.read(current) + direction * 0.01));
+  }
+
+  interface FreeSpot {
+    found: boolean;
+    factor: number;
+    lift: number;
+    offset: Vector3;
+    base: Vector3;
+  }
+
+  /**
+   * Procura, do centro para fora, o lugar livre mais próximo para o item já
+   * carregado. Encolhe em etapas só quando não cabe no tamanho atual.
+   */
+  function freeSpotFor(item: SceneItem, factors: readonly number[]): FreeSpot | null {
+    const object = runtime?.rootOf(item.id);
+    if (!runtime || !object) return null;
+    object.updateWorldMatrix(true, true);
+    const bounds = new Box3().setFromObject(object);
+    if (bounds.isEmpty()) return null;
+    const aspect = targetAspect();
+    const base = object.position.clone();
+    const occupied = draft
+      .filter((other) => other.id !== item.id && other.visible && other.type !== 'audio')
+      .flatMap((other) => {
+        const root = runtime!.rootOf(other.id);
+        if (!root) return [];
+        root.updateWorldMatrix(true, true);
+        const box = new Box3().setFromObject(root);
+        return box.isEmpty() ? [] : [box.expandByScalar(0.015)];
+      });
+    const candidates: Vector3[] = [];
+    for (let row = -10; row <= 10; row += 1) for (let col = -10; col <= 10; col += 1) candidates.push(new Vector3(col * 0.05, row * aspect * 0.05, 0));
+    candidates.sort((a, b) => a.lengthSq() - b.lengthSq());
+    for (const factor of factors) {
+      // O item encolhe em volta da própria origem, como faz a escala na cena.
+      const box = bounds.clone();
+      box.min.sub(base).multiplyScalar(factor).add(base);
+      box.max.sub(base).multiplyScalar(factor).add(base);
+      const lift = Math.max(0, -box.min.z);
+      box.translate(new Vector3(0, 0, lift));
+      const offset = candidates.find((candidateOffset) => {
+        const candidate = box.clone().translate(candidateOffset);
+        return candidate.min.x >= -0.5 && candidate.max.x <= 0.5 && candidate.min.y >= -aspect / 2 && candidate.max.y <= aspect / 2 && occupied.every((other) => !other.intersectsBox(candidate));
+      });
+      if (offset) return { found: true, factor, lift, offset, base };
+    }
+    return { found: false, factor: 1, lift: Math.max(0, -bounds.min.z), offset: new Vector3(), base };
+  }
+
+  /** Botão "Encaixar": leva a lembrança selecionada ao lugar livre mais próximo. */
+  function fitSelectedToFreeSpot(): void {
+    stopPresentation();
+    runtime?.finishTransitions();
+    const current = selected();
+    if (!current || current.type === 'audio') return;
+    const spot = freeSpotFor(current, [1, 0.85, 0.7, 0.55]);
+    if (!spot) {
+      say('Não consegui medir esta lembrança para encaixar. Use os controles de posição.', 'error');
+      return;
+    }
+    if (!spot.found) {
+      say('Não encontrei um espaço livre em volta. Diminua o tamanho ou use um modelo da aba Layouts.', 'error');
+      return;
+    }
+    const scale = CONTROLS.find((control) => control.id === 'scale')!;
+    let next = current;
+    if (spot.factor !== 1) next = applyControl(next, scale, next.transform.scale * spot.factor);
+    next = {
+      ...next,
+      transform: {
+        ...next.transform,
+        position: [spot.base.x + spot.offset.x, spot.base.y + spot.offset.y, next.transform.position[2] + spot.lift],
+      },
+    };
+    say(null);
+    replaceDraft(next);
+    stage?.focusItem(next.id);
+    context.toast(spot.factor === 1 ? 'Lembrança encaixada no espaço livre.' : 'Lembrança encaixada e um pouco menor para caber.');
   }
 
   function quickRow(item: SceneItem): HTMLElement {
@@ -1407,6 +1557,7 @@ export const editorView: View = (context, root) => {
     );
 
     panel.replaceChildren(...children.filter((child): child is Node => child !== null));
+    updateSelectionBar();
   }
 
   // ------------------------------------------------------------------ desenho
@@ -1437,6 +1588,7 @@ export const editorView: View = (context, root) => {
         ),
       ),
     );
+    updateSelectionBar();
   }
 
   function statusOf(id: string): HTMLElement | null {
@@ -1526,6 +1678,39 @@ export const editorView: View = (context, root) => {
     redrawMotionBox();
   }
 
+  /** Atalhos de teclado (desktop): setas movem, Ctrl/Cmd+Z desfaz, Esc solta a seleção. */
+  function handleKey(event: KeyboardEvent): void {
+    const target = event.target as HTMLElement | null;
+    if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
+    if (event.defaultPrevented) return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      stepHistory(event.shiftKey ? 1 : -1);
+      return;
+    }
+    if (event.key === 'Escape') {
+      if (layoutOriginal) cancelLayout();
+      else selectItem(null);
+      return;
+    }
+    if (section !== 'objects' || layoutOriginal || playing) return;
+    const current = selected();
+    if (!current || current.type === 'audio') return;
+    const px = CONTROLS.find((control) => control.id === 'pos-x')!;
+    const step = event.shiftKey ? 0.05 : nudgeStep(px, fine);
+    const moves: Record<string, [number, number]> = {
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, step],
+      ArrowDown: [0, -step],
+    };
+    const move = moves[event.key];
+    if (!move) return;
+    event.preventDefault();
+    nudgePosition(move[0], move[1]);
+    finishEdit();
+  }
+
   // ------------------------------------------------------------------ carga
 
   async function start(): Promise<void> {
@@ -1596,6 +1781,9 @@ export const editorView: View = (context, root) => {
       },
     });
 
+    stageBox.append(selectionBar);
+    keyHandler = handleKey;
+    window.addEventListener('keydown', keyHandler);
     stage = createPreviewStage({
       container: stageBox,
       targetAspect: aspect,
@@ -1743,6 +1931,8 @@ export const editorView: View = (context, root) => {
 
   return () => {
     disposed = true;
+    if (keyHandler) window.removeEventListener('keydown', keyHandler);
+    keyHandler = null;
     stopPresentation();
     pendingPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
     // Salva sozinho o que ficou pendente: o botão "voltar" do aparelho não pergunta nada.

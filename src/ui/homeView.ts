@@ -10,8 +10,33 @@ interface MenuItem {
   run(): void;
 }
 
+type CtaMode = 'camera' | 'create' | 'projects';
+
+const CTA_INFO: Record<CtaMode, { title: string; hint: string; icon: IconName }> = {
+  camera: {
+    title: 'Rever na câmera',
+    hint: 'Aponte para a tatuagem e reveja os momentos guardados',
+    icon: 'camera',
+  },
+  create: {
+    title: 'Criar uma lembrança',
+    hint: 'Fotografe a tatuagem e comece a guardar momentos nela',
+    icon: 'plus',
+  },
+  projects: {
+    title: 'Abrir minhas lembranças',
+    hint: 'Toque numa tatuagem salva para rever ou organizar',
+    icon: 'folder',
+  },
+};
+
 export const homeView: View = (context, root) => {
   const chip = statusChip(context.store);
+  let disposed = false;
+  let ctaMode: CtaMode = context.getTarget() ? 'camera' : 'create';
+
+  const countLine = h('p', { class: 'home-count muted', role: 'status' });
+  countLine.hidden = true;
 
   const items: MenuItem[] = [
     {
@@ -59,13 +84,33 @@ export const homeView: View = (context, root) => {
     },
   ];
 
-  const [camera, ...others] = [items[2]!, ...items.filter((_, index) => index !== 2)];
-  const cta = h(
-    'button',
-    { class: 'home-cta', type: 'button', onclick: camera.run },
-    icon('camera'),
-    h('span', { class: 'home-cta-text' }, h('span', { class: 'home-cta-title' }, camera.title), h('span', { class: 'home-cta-hint' }, camera.hint)),
-  );
+  function runCta(): void {
+    if (ctaMode === 'camera') {
+      if (!context.getTarget()) {
+        context.toast('Para rever suas lembranças, abra uma tatuagem salva ou crie uma nova.');
+        context.navigate('projects');
+        return;
+      }
+      context.navigate('camera');
+      return;
+    }
+    context.navigate(ctaMode === 'projects' ? 'projects' : 'create');
+  }
+
+  const cta = h('button', { class: 'home-cta', type: 'button', onclick: runCta });
+
+  function renderCta(): void {
+    const info = CTA_INFO[ctaMode];
+    cta.dataset.mode = ctaMode;
+    cta.setAttribute('aria-label', `${info.title}. ${info.hint}.`);
+    cta.replaceChildren(
+      icon(info.icon),
+      h('span', { class: 'home-cta-text' }, h('span', { class: 'home-cta-title' }, info.title), h('span', { class: 'home-cta-hint' }, info.hint)),
+    );
+  }
+  renderCta();
+
+  const others = items.filter((_, index) => index !== 2);
   const list = h(
     'ul',
     { class: 'tile-grid' },
@@ -84,6 +129,25 @@ export const homeView: View = (context, root) => {
     ),
   );
 
+  // A ação principal acompanha o que já existe no aparelho: criar na primeira
+  // vez, abrir uma lembrança salva depois, rever na câmera quando já há alvo.
+  void (async () => {
+    try {
+      const repo = await context.getRepository();
+      const entries = await repo.list();
+      if (disposed) return;
+      const count = entries.filter((entry) => entry.kind === 'project').length;
+      countLine.hidden = false;
+      countLine.textContent = count === 0
+        ? 'Nenhuma lembrança guardada ainda. Comece pela sua tatuagem.'
+        : `${count} ${count === 1 ? 'lembrança guardada' : 'lembranças guardadas'} neste aparelho.`;
+      ctaMode = context.getTarget() ? 'camera' : count > 0 ? 'projects' : 'create';
+      renderCta();
+    } catch {
+      // Sem acesso ao armazenamento, a tela continua útil no modo "criar".
+    }
+  })();
+
   root.append(
     h(
       'main',
@@ -98,6 +162,7 @@ export const homeView: View = (context, root) => {
           'Associe fotos, vídeos e sons a uma tatuagem para reencontrar seus momentos na câmera. Tudo fica neste aparelho.',
         ),
         chip.element,
+        countLine,
       ),
       cta,
       h('ol', { class: 'home-steps', 'aria-label': 'Como guardar seus momentos' },
@@ -113,5 +178,8 @@ export const homeView: View = (context, root) => {
     ),
   );
 
-  return () => chip.destroy();
+  return () => {
+    disposed = true;
+    chip.destroy();
+  };
 };

@@ -505,6 +505,60 @@ describe('ajustar e salvar', () => {
     expect(root.querySelector('.save-bar')?.textContent).toMatch(/Alterações não salvas/);
   });
 
+  it('a barra da lembrança mostra a posição e oferece centro, camadas e encaixe', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo, true);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    const bar = root.querySelector('.selection-bar') as HTMLElement;
+    expect(bar.hidden).toBe(false);
+    expect(bar.textContent).toMatch(/Rosa/);
+    expect(bar.querySelector('.selection-metrics')?.textContent).toMatch(/X \d+% · Y \d+% · \d+% larg\./);
+
+    button(root, 'Frente').click();
+    expect(slider(root, 'Altura sobre a pele').value).toBe('0.01');
+    button(root, 'Trás').click();
+    button(root, 'Trás').click();
+    expect(slider(root, 'Altura sobre a pele').value).toBe('-0.01');
+
+    button(root, 'Centro').click();
+    expect(slider(root, 'Posição horizontal').value).toBe('0');
+    expect(slider(root, 'Posição vertical').value).toBe('0');
+  });
+
+  it('o mapa 3×3 acende o ponto onde a lembrança está', async () => {
+    const repo = await freshRepository();
+    const { project } = await newProject(repo, true);
+    const { root } = await mount(repo, project.id);
+    await ready(root);
+    (root.querySelector('button[aria-label="Canto superior direito"]') as HTMLButtonElement).click();
+    const active = root.querySelector('.spot-btn[aria-pressed="true"]');
+    expect(active?.getAttribute('aria-label')).toBe('Canto superior direito');
+    expect(root.querySelector('.spot-now')?.textContent).toMatch(/canto superior direito/i);
+  });
+
+  it('"Encaixar" afasta a lembrança de cima da outra e avisa', async () => {
+    visualGeometry = true;
+    const repo = await freshRepository();
+    const project = await createProject(repo, { name: 'Braço', anchor: makeMind() });
+    await addItem(repo, project.id, { file: { data: signedBytes('image/png', 64, 1), fileName: 'rosa.png' }, name: 'Rosa', transform: { scale: 0.35 } });
+    await addItem(repo, project.id, { file: { data: signedBytes('image/png', 64, 2), fileName: 'azul.png' }, name: 'Azul', transform: { scale: 0.35 } });
+    const { root, cleanup } = await mount(repo, project.id);
+    await ready(root);
+    const before = await savedItems(repo, project.id);
+    const runtime = stages.at(-1)!.attach.mock.calls[0]![0];
+    await vi.waitFor(() => {
+      if (!runtime.rootOf(before[0]!.id) || !runtime.rootOf(before[1]!.id)) throw new Error('itens ainda não carregados');
+    });
+
+    button(root, 'Encaixar').click();
+    const x = Number(slider(root, 'Posição horizontal').value);
+    const y = Number(slider(root, 'Posição vertical').value);
+    expect(Math.abs(x) + Math.abs(y)).toBeGreaterThan(0);
+    expect(toasts.at(-1)).toMatch(/encaixada/i);
+    cleanup();
+  });
+
   it('os botões + e − mudam o tamanho em passos e respeitam os limites', async () => {
     const repo = await freshRepository();
     const { project } = await newProject(repo, true);

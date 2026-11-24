@@ -80,3 +80,15 @@ window.addEventListener('popstate', (event) => {
 
 history.replaceState({ view: 'home' }, '');
 render('home');
+
+// Offline: guarda o app no aparelho depois da primeira visita completa. Em dev
+// o service worker não é registrado para não atrapalhar o recarregamento.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register(new URL('sw.js', document.baseURI))
+      .catch(() => {
+        // Sem service worker o app continua funcionando online normalmente.
+      });
+  });
+}

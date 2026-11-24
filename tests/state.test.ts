@@ -214,14 +214,14 @@ describe('rótulos e tons', () => {
 
   it('usa exatamente os textos exigidos para os estados principais', () => {
     const label = (status: TrackingStatus) => statusLabel({ ...initialTrackingState, status });
-    expect(label('target-ready')).toBe('Alvo pronto');
+    expect(label('target-ready')).toBe('Tatuagem pronta');
     expect(label('tracking')).toBe('Tatuagem reconhecida');
     expect(label('lost')).toBe('Rastreamento perdido');
     expect(label('camera-unavailable')).toBe('Câmera indisponível');
-    expect(label('error')).toBe('Erro ao compilar ou carregar o alvo');
+    expect(label('error')).toBe('Erro ao preparar a tatuagem');
     expect(label('searching')).toContain('Procurando tatuagem');
     expect(statusLabel({ ...initialTrackingState, status: 'preparing-target', progress: 37.4 })).toBe(
-      'Preparando imagem-alvo… 37%',
+      'Preparando a tatuagem… 37%',
     );
   });
 

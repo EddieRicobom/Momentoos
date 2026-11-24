@@ -198,7 +198,9 @@ export const projectsView: View = (context, root) => {
     }
 
     function redraw(): void {
+      const itemCount = record.scene.items.length;
       const meta = [`Atualizado ${formatDateTime(record.updatedAt)}`];
+      if (itemCount > 0) meta.push(`${itemCount} ${itemCount === 1 ? 'lembrança' : 'lembranças'}`);
       if (record.anchor) meta.push(`alvo ${formatBytes(record.anchor.size)}`, `${record.anchor.width}×${record.anchor.height} px`);
 
       const title =

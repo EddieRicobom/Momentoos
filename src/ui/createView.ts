@@ -201,6 +201,13 @@ export const createView: View = (context, root) => {
     }
   }
 
+  /** Leva o próximo passo à vista sem obrigar a rolar a tela à mão. */
+  function reveal(element: HTMLElement): void {
+    if (typeof element.scrollIntoView !== 'function') return;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    element.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+  }
+
   const currentCrop = (): NormalizedRect | null => {
     const rect = cropEditor.getRect();
     return isFullRect(rect) ? null : rect;
@@ -252,6 +259,7 @@ export const createView: View = (context, root) => {
       cropEditor.setImage(next.objectUrl, next.width, next.height);
       adjust.hidden = false;
       applySuggestion(false);
+      reveal(adjust);
     } catch (error) {
       // PREPARE_FAILED só vale durante o preparo; ler a foto é "carregar".
       store.dispatch({ type: 'TARGET_LOAD_FAILED', message: describeError(error) });
@@ -298,6 +306,7 @@ export const createView: View = (context, root) => {
     } finally {
       setBusy(false);
       renderResult();
+      if (context.getTarget()) reveal(result);
     }
   }
 
@@ -328,6 +337,7 @@ export const createView: View = (context, root) => {
     } finally {
       setBusy(false);
       renderResult();
+      if (context.getTarget()) reveal(result);
     }
   }
 
@@ -360,7 +370,7 @@ export const createView: View = (context, root) => {
           : 'carregado de arquivo .mind',
     ];
     result.append(
-      h('h2', { class: 'card-title' }, 'Alvo pronto'),
+      h('h2', { class: 'card-title' }, 'Tatuagem pronta'),
       preview,
       h('p', { class: 'muted' }, details.join(' · ')),
       ...(target.note ? [h('p', { class: 'muted' }, target.note)] : []),
